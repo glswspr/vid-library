@@ -1,0 +1,21 @@
+{
+  "name": "VidLibrary",
+  "short_name": "VidLibrary",
+  "description": "A clean, lightweight movie & TV streaming site.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "categories": ["entertainment", "video"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

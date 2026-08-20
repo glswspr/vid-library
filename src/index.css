@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #020617;
+    color: #f8fafc;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  /* ── TV remote friendly focus ring ───────────────────────────── */
+  *:focus-visible {
+    outline: 3px solid #06b6d4 !important;
+    outline-offset: 3px !important;
+    border-radius: 4px;
+  }
+
+  /* Softer ring for already-rounded elements */
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible,
+  [role="option"]:focus-visible,
+  select:focus-visible {
+    outline: 3px solid #06b6d4 !important;
+    outline-offset: 2px !important;
+    border-radius: 8px;
+  }
+
+  /* Inputs — bright cyan glow */
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 3px solid #06b6d4 !important;
+    outline-offset: 2px !important;
+    border-color: #06b6d4 !important;
+    box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2) !important;
+  }
+
+  /* Smooth scrolling for arrow key navigation */
+  html {
+    scroll-behavior: smooth;
+    font-size: 17px; /* Slightly larger base for TV viewing distance */
+  }
+
+  /* Remove hover-only opacity effects on TV (no mouse) */
+  @media (hover: none) {
+    .hover\:opacity-100 { opacity: 1 !important; }
+    .hover\:scale-105 { transform: none !important; }
+  }
+}
+
+/* ── TV / coarse-pointer refinements ──────────────────────────────── */
+/* No-precise-pointer devices (Android TV browser, Chromecast, touch-only)
+   get larger type, a stronger focus ring, and no expensive backdrop blur. */
+@media (hover: none) and (pointer: coarse) {
+  html {
+    font-size: 18px;
+  }
+  *:focus-visible {
+    outline-width: 4px !important;
+    outline-offset: 4px !important;
+  }
+  /* backdrop blur is costly on TV GPUs — use solid surfaces */
+  .backdrop-blur,
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-lg {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  /* Hide scrollbars on horizontal rows (navigation is via the D-pad) */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* Explicit TV mode (JS-detected): max-contrast ring + overscan breathing room */
+html.tv-mode *:focus-visible {
+  outline: 4px solid #22d3ee !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.25) !important;
+}
+
+/* Keep focused items clear of the sticky navbar and row edges */
+a[href],
+button,
+[role="button"],
+[role="tab"],
+[role="option"],
+[tabindex] {
+  scroll-margin-top: 5.5rem;
+  scroll-margin-left: 1rem;
+  scroll-margin-right: 1rem;
+}

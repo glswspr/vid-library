@@ -1,0 +1,210 @@
+import { extractImdbId } from '../utils/imdb';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import type { SearchResult } from './search';
+
+/**
+ * Resolve a direct IMDb ID input (raw ID or full URL).
+ * Returns a SearchResult if valid, null otherwise.
+ */
+export function resolveDirectImdbId(input: string): SearchResult | null {
+  const imdbId = extractImdbId(input);
+  if (!imdbId) return null;
+
+  return {
+    imdbId,
+    title: imdbId.toUpperCase(),
+    type: 'movie',
+  };
+}
+
+/**
+ * Look up metadata from Wikidata using an IMDb ID.
+ * Uses haswbstatement search to find the entity by IMDb property P345.
+ * Returns title, year, seasons count, and episode count.
+ */
+export async function resolveImdbTitle(imdbId: string): Promise<{
+  title: string;
+  year?: string;
+  seasonsCount?: number;
+  episodesCount?: number;
+} | null> {
+  try {
+    // Step 1: find Wikidata entity by IMDb ID property
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${encodeURIComponent(imdbId)}&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const pages = searchData?.query?.search || [];
+    if (pages.length === 0) return null;
+    const qid = pages[0].title;
+
+    // Step 2: get label, year, season count, episode count, and Wikipedia link
+    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=labels|claims|sitelinks&languages=en&format=json&origin=*`;
+    const claimsRes = await fetch(claimsUrl);
+    if (!claimsRes.ok) return null;
+    const claimsData = await claimsRes.json();
+    const entity = claimsData?.entities?.[qid];
+    // Prefer labels, fall back to P1476 (title) property when labels are empty
+    const label = entity?.labels?.en?.value
+      || entity?.claims?.P1476?.[0]?.mainsnak?.datavalue?.value?.text;
+
+    let year: string | undefined;
+    if (entity?.claims?.P577) {
+      const rawTime = entity.claims.P577[0]?.mainsnak?.datavalue?.value?.time;
+      if (rawTime) {
+        const m = (rawTime as string).match(/^\+?(\d{4})/);
+        if (m) year = m[1];
+      }
+    }
+    // Also try P580 (start time) for TV shows when P577 is missing
+    if (!year && entity?.claims?.P580) {
+      const rawTime = entity.claims.P580[0]?.mainsnak?.datavalue?.value?.time;
+      if (rawTime) {
+        const m = (rawTime as string).match(/^\+?(\d{4})/);
+        if (m) year = m[1];
+      }
+    }
+
+    // P2437 = number of seasons, P1113 = number of episodes
+    let seasonsCount: number | undefined;
+    let episodesCount: number | undefined;
+    const sc = entity?.claims?.P2437?.[0]?.mainsnak?.datavalue?.value;
+    const ec = entity?.claims?.P1113?.[0]?.mainsnak?.datavalue?.value;
+    seasonsCount = typeof sc === 'number' ? sc : undefined;
+    episodesCount = typeof ec === 'number' ? ec : undefined;
+
+    // Fallback: try Wikipedia infobox if Wikidata doesn't have episode counts
+    const enwikiTitle = entity?.sitelinks?.enwiki?.title;
+    if ((!seasonsCount || !episodesCount) && enwikiTitle) {
+      try {
+        const wpUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(enwikiTitle)}&prop=wikitext&format=json&origin=*`;
+        const wpRes = await fetch(wpUrl);
+        if (wpRes.ok) {
+          const wpData = await wpRes.json();
+          const wikitext: string = wpData?.parse?.wikitext?.['*'] || '';
+          if (!seasonsCount) {
+            const sm = wikitext.match(/\|\s*num_seasons\s*=\s*(\d+)/i);
+            if (sm) seasonsCount = parseInt(sm[1], 10);
+          }
+          if (!episodesCount) {
+            const em = wikitext.match(/\|\s*num_episodes\s*=\s*(\d+)/i);
+            if (em) episodesCount = parseInt(em[1], 10);
+          }
+        }
+      } catch { /* Wikipedia fallback failed, use what we have */ }
+    }
+
+    return {
+      title: label || imdbId,
+      year,
+      seasonsCount,
+      episodesCount,
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface TmdbFindResult {
+  movie_results?: { id: number; poster_path?: string | null; backdrop_path?: string | null }[];
+  tv_results?: { id: number; poster_path?: string | null; backdrop_path?: string | null }[];
+}
+
+export interface TmdbResolved {
+  id: string;
+  posterPath?: string;
+  backdropPath?: string;
+}
+
+// Module-level cache for IMDb → TMDB lookups (24h TTL) so re-visiting a title
+// doesn't keep hitting TMDB's rate limits (mirrors vidsrc-addon's caching).
+const tmdbIdCache = new Map<string, { value: TmdbResolved | null; at: number }>();
+const TMDB_ID_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve a TMDB numeric ID from an IMDb ID using TMDB's find API.
+ * Prefers the app's own VITE_TMDB_API_KEY, falling back to VidRock's
+ * public key. Returns null if unresolvable.
+ */
+export async function resolveTmdbFromImdb(
+  imdbId: string,
+  type: 'movie' | 'tv',
+): Promise<TmdbResolved | null> {
+  const cacheKey = `${type}:${imdbId}`;
+  const cached = tmdbIdCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TMDB_ID_CACHE_TTL) return cached.value;
+
+  const keys = TMDB_API_KEY
+    ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
+    : [FALLBACK_TMDB_API_KEY];
+
+  for (const key of keys) {
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${key}&external_source=imdb_id`,
+      );
+      if (!res.ok) continue;
+      const data: TmdbFindResult = await res.json();
+      const movie = data.movie_results?.[0];
+      const show = data.tv_results?.[0];
+      const result = type === 'tv' ? show ?? movie : movie ?? show;
+      if (!result) continue;
+      const value: TmdbResolved = {
+        id: result.id.toString(),
+        posterPath: result.poster_path || undefined,
+        backdropPath: result.backdrop_path || undefined,
+      };
+      tmdbIdCache.set(cacheKey, { value, at: Date.now() });
+      return value;
+    } catch (e) {
+      console.warn(`TMDB find lookup failed for ${imdbId}:`, e);
+    }
+  }
+  tmdbIdCache.set(cacheKey, { value: null, at: Date.now() });
+  return null;
+}
+
+/** Best-effort poster URL for an IMDb ID (CORS-friendly TMDB lookup). */
+export async function resolvePosterUrl(
+  imdbId: string,
+  type: 'movie' | 'tv',
+): Promise<string | undefined> {
+  const tmdb = await resolveTmdbFromImdb(imdbId, type);
+  return tmdb?.posterPath
+    ? `https://image.tmdb.org/t/p/w500${tmdb.posterPath}`
+    : undefined;
+}
+
+const tmdbRatingCache = new Map<string, { value: string | null; at: number }>();
+const TMDB_RATING_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+export async function fetchTmdbRating(
+  imdbId: string,
+  type: 'movie' | 'tv',
+): Promise<string | undefined> {
+  const cacheKey = `${type}:${imdbId}`;
+  const cached = tmdbRatingCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TMDB_RATING_CACHE_TTL) return cached.value ?? undefined;
+
+  const tmdb = await resolveTmdbFromImdb(imdbId, type);
+  if (!tmdb) {
+    tmdbRatingCache.set(cacheKey, { value: null, at: Date.now() });
+    return undefined;
+  }
+
+  const key = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!key) return undefined;
+
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/${type}/${tmdb.id}?api_key=${key}`,
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const rating = data.vote_average ? data.vote_average.toFixed(1) : undefined;
+    tmdbRatingCache.set(cacheKey, { value: rating ?? null, at: Date.now() });
+    return rating;
+  } catch {
+    return undefined;
+  }
+}
