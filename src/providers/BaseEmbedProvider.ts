@@ -56,6 +56,7 @@ export function createEmbedProvider(config: {
       return {
         supportsSubtitles: true,
         supportsProgress: true,
+        supportsAutoplayNext: false,
       };
     },
   };

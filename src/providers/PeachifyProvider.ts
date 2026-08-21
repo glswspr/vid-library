@@ -57,6 +57,6 @@ export const peachifyProvider: VideoProvider = {
   name: 'Peachify',
   getEmbedUrl: buildPeachifyUrl,
   getCapabilities(): PlayerCapabilities {
-    return { supportsSubtitles: true, supportsProgress: true };
+    return { supportsSubtitles: true, supportsProgress: true, supportsAutoplayNext: false };
   },
 };

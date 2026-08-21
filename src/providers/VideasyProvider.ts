@@ -46,6 +46,6 @@ export const videasyProvider: VideoProvider = {
   name: 'Videoasy',
   getEmbedUrl: buildVideoasyUrl,
   getCapabilities(): PlayerCapabilities {
-    return { supportsSubtitles: true, supportsProgress: true };
+    return { supportsSubtitles: true, supportsProgress: true, supportsAutoplayNext: false };
   },
 };

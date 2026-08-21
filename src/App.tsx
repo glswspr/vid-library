@@ -75,21 +75,6 @@ export const App: FC = () => {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>
-
-        <footer className="border-t border-slate-800/60 mt-16 py-6 px-4 text-center">
-          <p className="text-sm text-slate-500">
-            Tip: Use{' '}
-            <a
-              href="https://adguard.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
-            >
-              AdGuard
-            </a>{' '}
-            to block popups and ads.
-          </p>
-        </footer>
       </div>
     </Router>
   );

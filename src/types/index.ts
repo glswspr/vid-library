@@ -65,4 +65,5 @@ export interface WatchlistItem {
 export interface PlayerCapabilities {
   supportsSubtitles: boolean;
   supportsProgress: boolean;
+  supportsAutoplayNext: boolean;
 }

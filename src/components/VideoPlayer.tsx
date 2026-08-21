@@ -157,7 +157,11 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
       if ((pl.player_status as string) === 'completed' || payload.ended) {
         setEnded(true);
-        if (settings.autoplayNext && onAutoNext) {
+        if (
+          settings.autoplayNext &&
+          onAutoNext &&
+          getProvider(providerId).getCapabilities().supportsAutoplayNext
+        ) {
           setTimeout(() => onAutoNext(), 1500);
         }
       }

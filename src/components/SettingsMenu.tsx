@@ -71,7 +71,7 @@ export const SettingsMenu: FC = () => {
             </select>
           </label>
 
-          <label className="flex items-center justify-between mb-3 cursor-pointer">
+          <label className="flex items-center justify-between mb-1 cursor-pointer">
             <span className="text-sm text-slate-300 font-medium">Autoplay next episode</span>
             <input
               type="checkbox"
@@ -80,6 +80,9 @@ export const SettingsMenu: FC = () => {
               className="w-5 h-5 accent-cyan-500 cursor-pointer"
             />
           </label>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Availability depends on the selected server.
+          </p>
 
           <label className="block mb-4">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Accent color</span>

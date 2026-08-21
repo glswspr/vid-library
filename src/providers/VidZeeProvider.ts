@@ -44,6 +44,6 @@ export const vidZeeProvider: VideoProvider = {
   name: 'VidZee',
   getEmbedUrl: buildVidZeeUrl,
   getCapabilities(): PlayerCapabilities {
-    return { supportsSubtitles: true, supportsProgress: true };
+    return { supportsSubtitles: true, supportsProgress: true, supportsAutoplayNext: false };
   },
 };
