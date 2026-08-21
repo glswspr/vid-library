@@ -13,7 +13,7 @@ import {
 } from '../utils/storage';
 import { useSettings } from '../hooks/useSettings';
 import { getSettings } from '../utils/settings';
-import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star, Maximize, Minimize } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
 import ServerStatusDot from './ServerStatusDot';
@@ -52,8 +52,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const [hasError, setHasError] = useState<boolean>(false);
   const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
   const [ended, setEnded] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const manualOverrideRef = useRef(false);
   const autoFallbackCountRef = useRef(0);
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -78,6 +80,38 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     setHasError(false);
     setIsIframeLoaded(false);
     setEnded(false);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'f' || e.key === 'F') {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleFullscreen]);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
   useEffect(() => {
@@ -282,6 +316,15 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
           <ChevronRight className="w-5 h-5" />
         </button>
 
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
+        >
+          {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+        </button>
+
         {menuOpen && (
           <div
             role="listbox"
@@ -319,7 +362,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
         )}
       </div>
 
-      <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+      <div ref={containerRef} onDoubleClick={toggleFullscreen} className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
         {hasError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950/95 z-20">
             <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mb-3 border border-rose-500/20">
@@ -376,6 +419,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
               className="w-full h-full border-0"
               referrerPolicy="origin"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
               onLoad={() => {
                 setIsIframeLoaded(true);
                 rememberProvider(media.id, providerId);
