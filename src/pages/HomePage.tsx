@@ -210,6 +210,17 @@ export const HomePage: FC = () => {
           )}
         </div>
 
+        <div className="mt-3 text-center">
+          <a
+            href="https://adguard.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-slate-500 hover:text-cyan-400 transition-colors"
+          >
+            Tip: Use AdGuard to block popups and ads.
+          </a>
+        </div>
+
         {/* Search results */}
         {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
           <div className="mt-4" id="search-results" role="listbox">

@@ -47,15 +47,6 @@ export const Navbar: FC = () => {
           )}
 
           <SettingsMenu />
-
-          <a
-            href="https://adguard.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden lg:inline-flex text-xs text-slate-500 hover:text-cyan-400 transition-colors"
-          >
-            Tip: Use AdGuard to block popups and ads.
-          </a>
         </div>
       </div>
     </header>
