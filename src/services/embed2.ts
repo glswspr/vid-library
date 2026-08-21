@@ -284,6 +284,7 @@ export async function fetchTmdbTVEpisodes(imdbId: string): Promise<Season[] | nu
               title: ep.name || `Episode ${ep.episode_number}`,
               airDate: ep.air_date || undefined,
               overview: ep.overview || undefined,
+              stillPath: ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : undefined,
             }));
           }
         }
