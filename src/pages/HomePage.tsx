@@ -1,9 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import type { FC, ChangeEvent, KeyboardEvent, FormEvent } from 'react';
+import type { FC, ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { SearchResult } from '../services/catalog';
 import { searchByTitle } from '../services/catalog';
-import { extractImdbId } from '../utils/imdb';
 import { SearchResults } from '../components/SearchResults';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { MyList } from '../components/MyList';
@@ -24,9 +23,6 @@ export const HomePage: FC = () => {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-
-  const [imdbInput, setImdbInput] = useState<string>('');
-  const [imdbError, setImdbError] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -151,20 +147,6 @@ export const HomePage: FC = () => {
     }
   };
 
-  const handleImdbSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setImdbError(null);
-
-    const imdbId = extractImdbId(imdbInput);
-    if (!imdbId) {
-      setImdbError('Please enter a valid IMDb ID (e.g. tt0120737)');
-      return;
-    }
-
-    // Navigate directly — the player page will handle type detection
-    navigate(`/movie/${imdbId}`);
-  };
-
   // Handle pre-filled query from old-style ?q= URL param
   useEffect(() => {
     const q = searchParams.get('q');
@@ -256,32 +238,6 @@ export const HomePage: FC = () => {
           </div>
         )}
       </div>
-
-      {/* IMDb ID entry */}
-      <form onSubmit={handleImdbSubmit} className="flex gap-2 mb-12">
-        <div className="flex-1 relative">
-          <input
-            type="text"
-            value={imdbInput}
-            onChange={(e) => {
-              setImdbInput(e.target.value);
-              setImdbError(null);
-            }}
-            placeholder="tt1234567 or IMDb URL"
-            className="w-full bg-slate-800/60 border-2 border-slate-700/60 focus:border-cyan-500 rounded-xl px-4 py-3.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
-          />
-        </div>
-        <button
-          type="submit"
-          className="px-6 py-3.5 bg-cyan-500 text-slate-950 font-bold text-sm rounded-xl hover:bg-cyan-400 transition-colors cursor-pointer shrink-0"
-        >
-          Open
-        </button>
-      </form>
-
-      {imdbError && (
-        <p className="text-xs text-rose-400 -mt-10 mb-4 px-1">{imdbError}</p>
-      )}
 
       {/* Continue Watching */}
       <ContinueWatching />
