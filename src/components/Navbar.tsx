@@ -1,8 +1,8 @@
 import type { FC } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Film, Search } from 'lucide-react';
+import { SettingsMenu } from '../components/SettingsMenu';
 
-/** Custom event name used to focus the home page search box without navigating. */
 export const FOCUS_SEARCH_EVENT = 'vdl:focus-search';
 
 export const Navbar: FC = () => {
@@ -24,29 +24,30 @@ export const Navbar: FC = () => {
           </span>
         </Link>
 
-        {/* Search is a first-class action on TV. When already on the home
-            page, focus the existing search box (no navigation); otherwise
-            navigate home and focus it. */}
-        {onHome ? (
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event(FOCUS_SEARCH_EVENT))}
-            className={searchClasses}
-            aria-label="Search"
-          >
-            <Search className="w-5 h-5" />
-            <span>Search</span>
-          </button>
-        ) : (
-          <Link
-            to="/?focus=search"
-            className={searchClasses}
-            aria-label="Search"
-          >
-            <Search className="w-5 h-5" />
-            <span>Search</span>
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {onHome ? (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event(FOCUS_SEARCH_EVENT))}
+              className={searchClasses}
+              aria-label="Search"
+            >
+              <Search className="w-5 h-5" />
+              <span>Search</span>
+            </button>
+          ) : (
+            <Link
+              to="/?focus=search"
+              className={searchClasses}
+              aria-label="Search"
+            >
+              <Search className="w-5 h-5" />
+              <span>Search</span>
+            </Link>
+          )}
+
+          <SettingsMenu />
+        </div>
       </div>
     </header>
   );

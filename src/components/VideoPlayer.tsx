@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { getProvider } from '../providers';
@@ -8,19 +8,24 @@ import {
   rememberProvider,
   saveWatchProgress,
   getWatchProgress,
+  recordServerSuccess,
+  recordServerFailure,
 } from '../utils/storage';
+import { useSettings } from '../hooks/useSettings';
+import { getSettings } from '../utils/settings';
 import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
+import ServerStatusDot from './ServerStatusDot';
+import EndOfContentOverlay from './EndOfContentOverlay';
 
 interface VideoPlayerProps {
   media: MediaItem;
   season?: number;
   episode?: number;
+  onAutoNext?: () => void;
 }
 
-// Iframe embed servers only — the native/direct players were removed because
-// they almost never worked.
 const SERVER_BUTTONS: readonly { label: string; provider: ProviderId }[] = [
   { label: 'Server 1', provider: 'vidrock' },
   { label: 'Server 2', provider: 'vidapi' },
@@ -31,7 +36,6 @@ const SERVER_BUTTONS: readonly { label: string; provider: ProviderId }[] = [
   { label: 'Server 7', provider: 'vidzee' },
 ];
 
-// Human-readable provider name to show under each server button.
 const PROVIDER_NAMES: Record<ProviderId, string> = {
   videasy: 'Videasy',
   vidrock: 'VidRock',
@@ -42,43 +46,40 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
   vidzee: 'VidZee',
 };
 
-export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) => {
-  // Default to Server 1 (VidRock) on the player page.
-  const [providerId, setProviderId] = useState<ProviderId>('vidrock');
+export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAutoNext }) => {
+  const [settings] = useSettings();
+  const [providerId, setProviderId] = useState<ProviderId>(() => getSettings().defaultProvider);
   const [hasError, setHasError] = useState<boolean>(false);
   const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
+  const [ended, setEnded] = useState<boolean>(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // Set once the user manually picks a server this session.
   const manualOverrideRef = useRef(false);
-  // Counts consecutive automatic server fallbacks so a string of failing
-  // servers can't loop forever — we eventually show the error screen.
   const autoFallbackCountRef = useRef(0);
-  // Compact server switcher: dropdown + quick cycle instead of a crowded row.
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const currentServer =
     SERVER_BUTTONS.find((b) => b.provider === providerId) ?? SERVER_BUTTONS[0];
 
-  // Reset progress/state when the title changes — back to Server 1 (VidRock).
   useEffect(() => {
     setHasError(false);
     setIsIframeLoaded(false);
+    setEnded(false);
     autoFallbackCountRef.current = 0;
     if (!manualOverrideRef.current) {
-      setProviderId('vidrock');
+      setProviderId(getSettings().defaultProvider);
     }
   }, [media.id, media.tmdbId, season, episode]);
 
-  const handleProviderChange = (newProvider: ProviderId) => {
+  const handleProviderChange = useCallback((newProvider: ProviderId) => {
     manualOverrideRef.current = true;
     setProviderId(newProvider);
     setPreferredProvider(newProvider);
     setHasError(false);
     setIsIframeLoaded(false);
-  };
+    setEnded(false);
+  }, []);
 
-  // Close the server menu on outside click / Escape.
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
@@ -97,7 +98,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
     };
   }, [menuOpen]);
 
-  // Cycle to the next/previous server.
   const cycleServer = (dir: 1 | -1) => {
     const idx = SERVER_BUTTONS.findIndex((b) => b.provider === providerId);
     const next = SERVER_BUTTONS[(idx + dir + SERVER_BUTTONS.length) % SERVER_BUTTONS.length];
@@ -106,70 +106,89 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
     setMenuOpen(false);
   };
 
-  // Listen for iframe postMessage status events
+  const handleMessage = useCallback((event: MessageEvent) => {
+    let data = event.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch { return; }
+    }
+    if (!data || typeof data !== 'object') return;
+
+    const payload = data as Record<string, unknown>;
+
+    if (typeof payload.timestamp === 'number' || typeof payload.progress === 'number') {
+      const progress = (payload.timestamp as number) || 0;
+      const duration = (payload.duration as number) || 0;
+      if (progress > 0) {
+        saveWatchProgress({
+          id: media.id,
+          title: media.title,
+          type: media.type,
+          posterUrl: media.posterUrl,
+          seasonNumber: payload.season ? Number(payload.season) : season,
+          episodeNumber: payload.episode ? Number(payload.episode) : episode,
+          progress,
+          duration,
+          completed: false,
+          updatedAt: Date.now(),
+        });
+      }
+      return;
+    }
+
+    if (data.type === 'PLAYER_EVENT' || payload.event === 'playing') {
+      const pl = (payload.data as Record<string, unknown>) || payload;
+      const progress = (pl.player_progress as number) || (pl.currentTime as number) || 0;
+      const duration = (pl.player_duration as number) || (pl.duration as number) || 0;
+
+      if (progress > 0) {
+        saveWatchProgress({
+          id: media.id,
+          title: media.title,
+          type: media.type,
+          posterUrl: media.posterUrl,
+          seasonNumber: season,
+          episodeNumber: episode,
+          progress,
+          duration,
+          completed: pl.player_status === 'completed',
+          updatedAt: Date.now(),
+        });
+      }
+
+      if ((pl.player_status as string) === 'completed' || payload.ended) {
+        setEnded(true);
+        if (settings.autoplayNext && onAutoNext) {
+          setTimeout(() => onAutoNext(), 1500);
+        }
+      }
+      return;
+    }
+
+    if (
+      payload.error === 'Content Not Found' ||
+      payload.status === 404 ||
+      (typeof payload.message === 'string' && payload.message.includes('Content Not Found'))
+    ) {
+      recordServerFailure(providerId);
+      const fallbackOrder = getProviderFallbackOrder();
+      if (autoFallbackCountRef.current < fallbackOrder.length) {
+        autoFallbackCountRef.current += 1;
+        const current = fallbackOrder.indexOf(providerId);
+        const next = fallbackOrder[(current + 1) % fallbackOrder.length];
+        if (next !== providerId) {
+          handleProviderChange(next);
+          return;
+        }
+      }
+      setHasError(true);
+    }
+  }, [media, season, episode, providerId, handleProviderChange, settings.autoplayNext, onAutoNext]);
+
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      let data = event.data;
-      if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch { return; }
-      }
-      if (!data) return;
-
-      // Videoasy posts a JSON message with { timestamp, duration, season, episode }.
-      if (typeof data.timestamp === 'number' || typeof data.progress === 'number') {
-        const progress = data.timestamp || 0;
-        const duration = data.duration || 0;
-        if (progress > 0) {
-          saveWatchProgress({
-            id: media.id,
-            title: media.title,
-            type: media.type,
-            posterUrl: media.posterUrl,
-            seasonNumber: data.season ?? season,
-            episodeNumber: data.episode ?? episode,
-            progress,
-            duration,
-            completed: false,
-            updatedAt: Date.now(),
-          });
-        }
-        return;
-      }
-
-      // PLAYER_EVENT format (VidAPI-style embeds)
-      if (data.type === 'PLAYER_EVENT' || data.event === 'playing') {
-        const payload = data.data || data;
-        const progress = payload.player_progress || payload.currentTime || 0;
-        const duration = payload.player_duration || payload.duration || 0;
-
-        if (progress > 0) {
-          saveWatchProgress({
-            id: media.id,
-            title: media.title,
-            type: media.type,
-            posterUrl: media.posterUrl,
-            seasonNumber: season,
-            episodeNumber: episode,
-            progress,
-            duration,
-            // A finished episode is marked watched even if the embed failed
-            // to report a usable duration.
-            completed: payload.player_status === 'completed',
-            updatedAt: Date.now(),
-          });
-        }
-      }
-    };
-
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [media, season, episode]);
+  }, [handleMessage]);
 
-  // Stable embed URL — only changes on provider/show/season/episode switch.
-  // Supports async providers (e.g. Peachify needs a TMDB lookup).
-  // Resume is read fresh from storage (keyed per-episode) at URL-build time,
-  // NOT from a component state ref — otherwise switching to a NEW episode
-  // would inherit the previous episode's timestamp and open near the end.
   const iframeKey = `${providerId}|${media.id}|${season}|${episode}`;
   const [embedUrl, setEmbedUrl] = useState<string>('');
   useEffect(() => {
@@ -189,10 +208,8 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
       setEmbedUrl(result);
     }
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerId, media.imdbId, media.tmdbId, media.id, media.type, season, episode]);
 
-  // Hide the loading overlay if the embed never fires onLoad.
   useEffect(() => {
     if (!isIframeLoaded) {
       const t = setTimeout(() => setIsIframeLoaded(true), IFRAME_LOAD_TIMEOUT);
@@ -200,19 +217,26 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
     }
   }, [isIframeLoaded, iframeKey]);
 
+  const handleReplay = useCallback(() => {
+    setEnded(false);
+    setIsIframeLoaded(false);
+  }, []);
+
   return (
     <div className="w-full bg-slate-900 rounded-2xl border border-slate-800 p-3 sm:p-4 shadow-2xl">
-      {/* Media info */}
       <div className="flex items-center gap-3 mb-3">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-white line-clamp-1">
             {media.title}
           </h2>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="text-xs text-slate-400">
               {media.type === 'tv' ? 'TV Series' : 'Movie'}
             </span>
             {media.year && <span className="text-xs text-slate-500">• {media.year}</span>}
+            {media.duration && (
+              <span className="text-xs text-slate-500">• {media.duration}</span>
+            )}
             {media.rating && (
               <span className="text-xs text-amber-400 font-semibold flex items-center gap-1">
                 <Star className="w-3 h-3 fill-current" />
@@ -223,9 +247,9 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
         </div>
       </div>
 
-      {/* Server switcher — compact cycle + dropdown instead of a crowded row. */}
       <div className="relative flex items-center gap-1.5 mb-3" ref={menuRef}>
         <button
+          type="button"
           onClick={() => cycleServer(-1)}
           aria-label="Previous server"
           className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
@@ -234,6 +258,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
         </button>
 
         <button
+          type="button"
           onClick={() => { autoFallbackCountRef.current = 0; setMenuOpen((o) => !o); }}
           aria-haspopup="listbox"
           aria-expanded={menuOpen}
@@ -245,6 +270,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
         </button>
 
         <button
+          type="button"
           onClick={() => cycleServer(1)}
           aria-label="Next server"
           className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
@@ -265,6 +291,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
                   key={btn.provider}
                   role="option"
                   aria-selected={isActive}
+                  type="button"
                   onClick={() => {
                     autoFallbackCountRef.current = 0;
                     handleProviderChange(btn.provider);
@@ -276,7 +303,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
-                  <span>{btn.label}</span>
+                  <span className="flex items-center gap-2">
+                    <ServerStatusDot provider={btn.provider} />
+                    {btn.label}
+                  </span>
                   <span className="text-xs text-slate-500">{PROVIDER_NAMES[btn.provider]}</span>
                 </button>
               );
@@ -285,7 +315,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
         )}
       </div>
 
-      {/* Iframe embed player */}
       <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
         {hasError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950/95 z-20">
@@ -296,8 +325,8 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
             <p className="text-xs text-slate-400 max-w-sm mb-4">Could not load this video.</p>
             <div className="flex items-center gap-3">
               <button
+                type="button"
                 onClick={() => {
-                  // Skip to the next server, putting known-good servers first.
                   const fallbackOrder = getProviderFallbackOrder();
                   const current = fallbackOrder.indexOf(providerId);
                   handleProviderChange(fallbackOrder[(current + 1) % fallbackOrder.length]);
@@ -307,6 +336,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
                 Try other server
               </button>
               <button
+                type="button"
                 onClick={() => setHasError(false)}
                 className="px-5 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold text-sm cursor-pointer"
               >
@@ -315,7 +345,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
             </div>
           </div>
         ) : (
-          /* Native Embed iframe */
           <>
             {!isIframeLoaded && (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
@@ -326,23 +355,31 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
               </div>
             )}
 
+            {ended && (
+              <EndOfContentOverlay
+                mediaType={media.type}
+                nextSeason={season}
+                nextEpisode={episode}
+                onReplay={handleReplay}
+                onNext={onAutoNext}
+              />
+            )}
+
             <iframe
               ref={iframeRef}
               key={iframeKey}
               src={embedUrl}
               className="w-full h-full border-0"
               referrerPolicy="origin"
-              // Not sandboxed — providers detect sandbox and refuse to play.
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               onLoad={() => {
                 setIsIframeLoaded(true);
-                // Remember the server that worked for this title.
                 rememberProvider(media.id, providerId);
                 setPreferredProvider(providerId);
+                recordServerSuccess(providerId);
               }}
               onError={() => {
-                // Server replied with an error — skip to the next server
-                // instead of waiting for a manual click.
+                recordServerFailure(providerId);
                 const fallbackOrder = getProviderFallbackOrder();
                 if (fallbackOrder.length > 1) {
                   const current = fallbackOrder.indexOf(providerId);
@@ -359,7 +396,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode }) =>
           </>
         )}
       </div>
-
     </div>
   );
 };

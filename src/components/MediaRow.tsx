@@ -7,18 +7,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 interface MediaRowProps {
   title: string;
   items: MediaItem[];
-  /** Optional leading icon rendered next to the title. */
   icon?: ReactNode;
-  /** Message shown when the row has no items. */
   emptyMessage?: string;
 }
 
-/**
- * A horizontal, D-pad-friendly recommendation carousel (the same "row" idea
- * as v2d / VidLibrary Lite). On desktop, arrow buttons scroll the row; on TV
- * the global spatial-nav hook scrolls it via `scrollIntoView({inline:'nearest'})`
- * and the scrollbar is hidden. Reuses MediaCard for consistent visuals.
- */
 export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }) => {
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +28,6 @@ export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }
           <h2 className="text-xl font-bold text-white tracking-tight truncate">{title}</h2>
         </div>
 
-        {/* Desktop scroll arrows — hidden on TV where the D-pad handles it. */}
         <div className="hidden sm:flex items-center gap-2 shrink-0">
           <button
             type="button"
@@ -62,15 +53,17 @@ export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }
           <p className="text-sm">{emptyMessage ?? 'Nothing here yet.'}</p>
         </div>
       ) : (
-        <div
-          ref={scrollerRef}
-          className="flex gap-4 overflow-x-auto pb-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {items.map((item) => (
-            <div key={item.id} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0">
-              <MediaCard item={item} />
-            </div>
-          ))}
+        <div className="relative">
+          <div
+            ref={scrollerRef}
+            className="flex gap-4 overflow-x-auto pb-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {items.map((item) => (
+              <div key={item.id} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0">
+                <MediaCard item={item} />
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </section>

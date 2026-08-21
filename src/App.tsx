@@ -6,13 +6,19 @@ import { HomePage } from './pages/HomePage';
 import { MoviePage } from './pages/MoviePage';
 import { TVShowPage } from './pages/TVShowPage';
 import { NotFound } from './pages/NotFound';
+import { Navbar } from './components/Navbar';
 import { useSpatialNav } from './hooks/useSpatialNav';
+import { useSettings } from './hooks/useSettings';
+import { OfflineBanner } from './components/OfflineBanner';
 
-/**
- * Saves each route's scroll position and restores it when the user navigates
- * back (POP), so returning from a title lands where you left off. Non-back
- * navigation scrolls to the top as usual.
- */
+function AccentApplier() {
+  const [settings] = useSettings();
+  useEffect(() => {
+    document.documentElement.style.setProperty('--accent', settings.accentColor);
+  }, [settings.accentColor]);
+  return null;
+}
+
 function ScrollManager() {
   const { pathname } = useLocation();
   const navigationType = useNavigationType();
@@ -21,12 +27,10 @@ function ScrollManager() {
   useEffect(() => {
     if (navigationType === 'POP') {
       const saved = sessionStorage.getItem(`scroll:${pathname}`);
-      // Wait a frame so the new route has laid out before scrolling.
       requestAnimationFrame(() => {
         window.scrollTo(0, saved ? Number(saved) : 0);
       });
     } else if (isSameShowEpisode(prevPathname.current, pathname)) {
-      // Navigating between episodes of the same show — keep current scroll.
       const saved = sessionStorage.getItem(`scroll:${pathname}`);
       requestAnimationFrame(() => {
         window.scrollTo(0, saved ? Number(saved) : 0);
@@ -37,7 +41,6 @@ function ScrollManager() {
     prevPathname.current = pathname;
 
     return () => {
-      // Runs just before the next route's effect — capture this page's scroll.
       sessionStorage.setItem(`scroll:${pathname}`, String(window.scrollY));
     };
   }, [pathname, navigationType]);
@@ -45,10 +48,6 @@ function ScrollManager() {
   return null;
 }
 
-/**
- * True when both routes are episode pages of the same TV show
- * (`/tv/{id}/season/{s}/episode/{e}`), so episode clicks don't jump to top.
- */
 function isSameShowEpisode(from: string, to: string): boolean {
   if (!from || !to) return false;
   const re = /^\/tv\/([^/]+)\/season\/\d+\/episode\/\d+$/;
@@ -58,15 +57,17 @@ function isSameShowEpisode(from: string, to: string): boolean {
 }
 
 export const App: FC = () => {
-  // D-pad / arrow-key spatial navigation + Back/Escape handling (TV remotes).
   useSpatialNav();
 
   return (
     <Router>
       <ScrollManager />
+      <AccentApplier />
       <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-slate-950">
-        <ErrorBoundary>
-          <Routes>
+      <Navbar />
+      <ErrorBoundary>
+        <OfflineBanner />
+        <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/movie/:id" element={<MoviePage />} />
             <Route path="/tv/:id" element={<TVShowPage />} />

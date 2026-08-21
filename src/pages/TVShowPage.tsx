@@ -11,6 +11,7 @@ import { getWatchProgress, isInWatchlist, toggleWatchlist } from '../utils/stora
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
+import ExpandableText from '../components/ExpandableText';
 
 export const TVShowPage: FC = () => {
   const { id, season: seasonParam, episode: episodeParam } = useParams<{
@@ -29,7 +30,6 @@ export const TVShowPage: FC = () => {
   const [inList, setInList] = useState<boolean>(false);
   const nextEpisodeBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Load TV show details
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -53,27 +53,22 @@ export const TVShowPage: FC = () => {
     }));
   };
 
-  // Update SEO title
   useEffect(() => {
     if (show) {
       document.title = `${show.title} - S${currentSeason}E${currentEpisode} - VidLibrary`;
     }
   }, [show, currentSeason, currentEpisode]);
 
-  // On TV, start with the primary action focused so the D-pad can act
-  // immediately (spatial navigation needs a focused starting point).
   useEffect(() => {
     if (!show || !isTvDevice()) return;
     nextEpisodeBtnRef.current?.focus();
   }, [show, currentSeason, currentEpisode]);
 
-  // Episode navigation (shared by keyboard shortcuts & buttons)
   const { nextSeason: nextSeasonNum, nextEpisode: nextEpisodeNum,
           prevSeason: prevSeasonNum, prevEpisode: prevEpisodeNum,
           goNext: handleNextEpisode, goPrev: handlePrevEpisode } =
     useEpisodeNavigation(show, currentSeason, currentEpisode, navigate);
 
-  // Keyboard shortcuts (← / → for episodes)
   useEffect(() => {
     if (!show || !id) return;
     const onKey = (e: KeyboardEvent) => {
@@ -124,7 +119,6 @@ export const TVShowPage: FC = () => {
 
   return (
     <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Back button + My List toggle */}
       <div className="flex items-center justify-between mb-4">
         <Link
           to="/"
@@ -134,6 +128,7 @@ export const TVShowPage: FC = () => {
         </Link>
 
         <button
+          type="button"
           onClick={handleToggleList}
           aria-pressed={inList}
           aria-label={inList ? 'Remove from My List' : 'Add to My List'}
@@ -148,7 +143,6 @@ export const TVShowPage: FC = () => {
         </button>
       </div>
 
-      {/* Show hero */}
       <div className="flex items-end gap-4 mb-5">
         {show.posterUrl ? (
           <img
@@ -167,19 +161,22 @@ export const TVShowPage: FC = () => {
             {show.rating ? ` • ${show.rating}★` : ''}
           </p>
           {show.description ? (
-            <p className="text-sm text-slate-400 mt-2 max-w-2xl line-clamp-3">
-              {show.description}
-            </p>
+            <ExpandableText text={show.description} maxChars={220} />
           ) : null}
         </div>
       </div>
 
-      {/* Main Player Section */}
       <div className="mb-4">
-        <VideoPlayer media={show} season={currentSeason} episode={currentEpisode} />
+        <VideoPlayer
+          media={show}
+          season={currentSeason}
+          episode={currentEpisode}
+          onAutoNext={() => {
+            if (nextSeasonNum && nextEpisodeNum) handleNextEpisode();
+          }}
+        />
       </div>
 
-      {/* Episode Header & Navigation */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 mb-8">
         <div>
           <div className="text-sm text-cyan-400 font-semibold tracking-wide uppercase">
@@ -194,15 +191,14 @@ export const TVShowPage: FC = () => {
             </div>
           ) : null}
           {currentEp?.overview ? (
-            <p className="text-sm text-slate-400 mt-1 max-w-2xl line-clamp-3">
-              {currentEp.overview}
-            </p>
+            <ExpandableText text={currentEp.overview} maxChars={220} />
           ) : null}
         </div>
 
         <div className="flex items-center gap-3">
           {prevSeasonNum && prevEpisodeNum && (
             <button
+              type="button"
               onClick={handlePrevEpisode}
               className="flex items-center gap-2 px-5 py-3 bg-slate-800 border-2 border-slate-700 hover:border-cyan-500 text-slate-200 font-bold text-sm rounded-xl transition-all cursor-pointer"
             >
@@ -215,6 +211,7 @@ export const TVShowPage: FC = () => {
             <button
               ref={nextEpisodeBtnRef}
               data-tv-autofocus
+              type="button"
               onClick={handleNextEpisode}
               className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
             >
@@ -225,7 +222,19 @@ export const TVShowPage: FC = () => {
         </div>
       </div>
 
-      {/* Season & Episode Selector */}
+      {show.cast && show.cast.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-lg font-bold text-white mb-3">Cast</h3>
+          <div className="flex flex-wrap gap-2">
+            {show.cast.slice(0, 12).map((name) => (
+              <span key={name} className="px-3 py-1.5 bg-slate-800/60 border border-slate-700 rounded-xl text-xs text-slate-300">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-6 mb-8">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-slate-800 pb-4">
           <div className="flex items-center gap-2">
@@ -233,35 +242,48 @@ export const TVShowPage: FC = () => {
             <h3 className="text-lg font-bold text-white">Episodes</h3>
           </div>
 
-          {/* Season selector — chips are far easier to drive with a D-pad
-              than a native <select> dropdown. */}
-          <div
-            className="flex items-center gap-2 overflow-x-auto max-w-full pb-1"
-            role="tablist"
-            aria-label="Select season"
-          >
-            {show.seasons.map((s) => {
-              const isActive = s.seasonNumber === currentSeason;
-              return (
-                <button
-                  key={s.seasonNumber}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => handleSelectSeason(s.seasonNumber)}
-                  className={`shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
-                      : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  S{s.seasonNumber}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-2 overflow-x-auto max-w-full pb-1"
+              role="tablist"
+              aria-label="Select season"
+            >
+              {show.seasons.map((s) => {
+                const isActive = s.seasonNumber === currentSeason;
+                return (
+                  <button
+                    key={s.seasonNumber}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => handleSelectSeason(s.seasonNumber)}
+                    className={`shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    S{s.seasonNumber}
+                  </button>
+                );
+              })}
+            </div>
+
+            <select
+              value={currentSeason}
+              onChange={(e) => handleSelectSeason(parseInt(e.target.value, 10))}
+              aria-label="Jump to season"
+              className="bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm font-semibold cursor-pointer focus:border-cyan-500"
+            >
+              {show.seasons.map((s) => (
+                <option key={s.seasonNumber} value={s.seasonNumber}>
+                  Season {s.seasonNumber} ({s.episodeCount} episodes)
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Episode Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {activeSeasonData?.episodes.map((ep) => {
             const isSelected = ep.episodeNumber === currentEpisode;
@@ -274,6 +296,7 @@ export const TVShowPage: FC = () => {
             return (
               <button
                 key={ep.episodeNumber}
+                type="button"
                 onClick={() => handleSelectEpisode(ep.episodeNumber)}
                 className={`p-4 rounded-xl border-2 text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                   isSelected
@@ -286,8 +309,6 @@ export const TVShowPage: FC = () => {
                     <span>Episode {ep.episodeNumber}</span>
                     {isWatched && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
                   </div>
-                  {/* Always show the episode name; fall back to "Episode N"
-                      when the API only returned a placeholder. */}
                   <div className="text-xs text-slate-400 line-clamp-1 font-normal">
                     {ep.title || `Episode ${ep.episodeNumber}`}
                   </div>
@@ -307,7 +328,6 @@ export const TVShowPage: FC = () => {
         </div>
       </div>
 
-      {/* Recommendations */}
       <MoreLikeThis media={show} />
     </div>
   );

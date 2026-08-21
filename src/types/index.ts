@@ -15,6 +15,9 @@ export interface MediaItem {
   type: MediaType;
   description?: string;
   seasonsCount?: number;
+  duration?: string;
+  cast?: string[];
+  credits?: { department: string; job: string; cast?: { name: string; character?: string }[] }[];
 }
 
 export interface Episode {

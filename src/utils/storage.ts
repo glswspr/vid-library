@@ -34,12 +34,54 @@ const KEYS = {
   PROGRESS: 'vid_library_progress_v2',
   WATCHLIST: 'vid_library_watchlist_v1',
   PROVIDER_MEMORY: 'vid_library_provider_memory_v1',
+  HEALTH: 'vid_library_server_health',
 };
 
 // Embeds fall back in this order: vidrock/vidapi are CORS-open, videasy is a
 // reliable third option, peachify is second-tier, vidsrc is last (most ad-heavy),
 // with vidcore/vidzee as additional options.
 const VALID_PROVIDERS: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'];
+
+export interface ServerHealth {
+  success: number;
+  failure: number;
+  lastResult: 'success' | 'failure';
+  lastUpdated: number;
+}
+
+function readServerHealth(): Record<string, ServerHealth> {
+  return readJson<Record<string, ServerHealth>>(KEYS.HEALTH, {});
+}
+
+export function recordServerSuccess(provider: string): void {
+  const map = readServerHealth();
+  const prev = map[provider];
+  map[provider] = {
+    success: (prev?.success ?? 0) + 1,
+    failure: prev?.failure ?? 0,
+    lastResult: 'success',
+    lastUpdated: Date.now(),
+  };
+  writeJson(KEYS.HEALTH, map);
+  window.dispatchEvent(new Event('server-health-changed'));
+}
+
+export function recordServerFailure(provider: string): void {
+  const map = readServerHealth();
+  const prev = map[provider];
+  map[provider] = {
+    success: prev?.success ?? 0,
+    failure: (prev?.failure ?? 0) + 1,
+    lastResult: 'failure',
+    lastUpdated: Date.now(),
+  };
+  writeJson(KEYS.HEALTH, map);
+  window.dispatchEvent(new Event('server-health-changed'));
+}
+
+export function getServerHealth(provider: string): ServerHealth | null {
+  return readServerHealth()[provider] ?? null;
+}
 
 function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (VALID_PROVIDERS as string[]).includes(value);
@@ -197,4 +239,13 @@ export function updateProgressPoster(
   if (!item || item.posterUrl) return;
   item.posterUrl = posterUrl;
   writeJson(KEYS.PROGRESS, items);
+}
+
+export function clearWatchProgress(): void {
+  writeJson(KEYS.PROGRESS, {});
+}
+
+export function clearWatchHistory(): void {
+  writeJson(KEYS.PROGRESS, {});
+  writeJson(KEYS.PROVIDER_MEMORY, {});
 }

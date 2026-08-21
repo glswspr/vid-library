@@ -8,6 +8,16 @@ import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
 import { ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { isInWatchlist, toggleWatchlist } from '../utils/storage';
+import ExpandableText from '../components/ExpandableText';
+
+const formatRuntime = (duration?: string): string => {
+  if (!duration) return '';
+  const mins = parseInt(duration, 10);
+  if (!mins) return duration;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+};
 
 export const MoviePage: FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +32,6 @@ export const MoviePage: FC = () => {
     getMediaDetails(id, 'movie').then((data) => {
       setMovie(data);
       setLoading(false);
-      // Update page title
       document.title = `${data.title} (${data.year || 'Movie'}) - VidLibrary`;
     }).catch(() => {
       setLoading(false);
@@ -68,7 +77,6 @@ export const MoviePage: FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Back button + My List toggle */}
       <div className="flex items-center justify-between mb-4">
         <Link
           to="/"
@@ -78,6 +86,7 @@ export const MoviePage: FC = () => {
         </Link>
 
         <button
+          type="button"
           onClick={handleToggleList}
           aria-pressed={inList}
           aria-label={inList ? 'Remove from My List' : 'Add to My List'}
@@ -92,7 +101,6 @@ export const MoviePage: FC = () => {
         </button>
       </div>
 
-      {/* Movie hero */}
       <div className="flex items-end gap-4 mb-8">
         {movie.posterUrl ? (
           <img
@@ -106,24 +114,27 @@ export const MoviePage: FC = () => {
             {movie.title}
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
-            {movie.year ? movie.year : ''}
+            {movie.year ? `${movie.year}` : ''}
+            {movie.duration ? ` • ${formatRuntime(movie.duration)}` : ''}
             {movie.rating ? ` • ${movie.rating}★` : ''}
             {movie.genre ? ` • ${movie.genre}` : ''}
           </p>
           {movie.description ? (
-            <p className="text-sm text-slate-400 mt-2 max-w-2xl line-clamp-3">
-              {movie.description}
-            </p>
+            <ExpandableText text={movie.description} maxChars={220} />
           ) : null}
+          {movie.cast && movie.cast.length > 0 && (
+            <p className="text-xs text-slate-500 mt-3 max-w-2xl">
+              <span className="text-slate-400 font-semibold">Cast:</span>{' '}
+              {movie.cast.slice(0, 5).join(', ')}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Main Player Section */}
       <div className="mb-8">
         <VideoPlayer media={movie} />
       </div>
 
-      {/* Recommendations */}
       <MoreLikeThis media={movie} />
     </div>
   );

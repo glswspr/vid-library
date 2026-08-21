@@ -191,6 +191,8 @@ export async function fetchMovieDetail(imdbId: string): Promise<MediaItem | null
     genre: movie.genre || undefined,
     type: 'movie',
     description: movie.plot || undefined,
+    duration: movie.duration || undefined,
+    cast: movie.cast || undefined,
   };
 }
 
@@ -210,6 +212,8 @@ export async function fetchShowDetail(imdbId: string): Promise<MediaItem | null>
     type: 'tv',
     description: show.plot || undefined,
     seasonsCount: show.seasons || undefined,
+    duration: show.duration || undefined,
+    cast: show.cast || undefined,
   };
 }
 
