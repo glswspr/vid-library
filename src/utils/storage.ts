@@ -241,11 +241,39 @@ export function updateProgressPoster(
   writeJson(KEYS.PROGRESS, items);
 }
 
-export function clearWatchProgress(): void {
-  writeJson(KEYS.PROGRESS, {});
+/** Remove a single watch progress entry by key. */
+export function removeWatchProgress(id: string, season?: number, episode?: number): void {
+  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  const key = season && episode ? `${id}_s${season}e${episode}` : id;
+  delete items[key];
+  writeJson(KEYS.PROGRESS, items);
 }
 
 export function clearWatchHistory(): void {
   writeJson(KEYS.PROGRESS, {});
   writeJson(KEYS.PROVIDER_MEMORY, {});
+}
+
+/** Mark an episode as fully watched (completed=true, progress=duration). */
+export function markEpisodeWatched(progress: Omit<WatchProgress, 'completed' | 'updatedAt'>): void {
+  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  const key = progress.seasonNumber && progress.episodeNumber
+    ? `${progress.id}_s${progress.seasonNumber}e${progress.episodeNumber}`
+    : progress.id;
+  const now = Date.now();
+  items[key] = {
+    ...progress,
+    completed: true,
+    progress: progress.duration,
+    updatedAt: now,
+  };
+  writeJson(KEYS.PROGRESS, items);
+}
+
+/** Mark an episode as unwatched (remove progress entry). */
+export function markEpisodeUnwatched(id: string, season?: number, episode?: number): void {
+  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  const key = season && episode ? `${id}_s${season}e${episode}` : id;
+  delete items[key];
+  writeJson(KEYS.PROGRESS, items);
 }

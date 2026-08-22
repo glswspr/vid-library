@@ -27,6 +27,7 @@ export interface Episode {
   airDate?: string;
   overview?: string;
   stillPath?: string;
+  runtime?: number;
 }
 
 export interface Season {

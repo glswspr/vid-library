@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import type { TVShowDetails } from '../types';
@@ -6,8 +6,8 @@ import { getTVShowDetails } from '../services/catalog';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
-import { ArrowLeft, ChevronLeft, ChevronRight, Tv, CheckCircle2, Bookmark, BookmarkCheck } from 'lucide-react';
-import { getWatchProgress, isInWatchlist, toggleWatchlist } from '../utils/storage';
+import { ArrowLeft, ChevronLeft, ChevronRight, Tv, CheckCircle2, Bookmark, BookmarkCheck, Play, Eye, EyeOff } from 'lucide-react';
+import { getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched } from '../utils/storage';
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
@@ -28,7 +28,162 @@ export const TVShowPage: FC = () => {
   const [show, setShow] = useState<TVShowDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [inList, setInList] = useState<boolean>(false);
+  const [epRefreshKey, setEpRefreshKey] = useState(0);
   const nextEpisodeBtnRef = useRef<HTMLButtonElement>(null);
+
+  const handleSelectSeason = (sNum: number) => {
+    navigate(`/tv/${id}/season/${sNum}/episode/1`);
+  };
+
+  const handleSelectEpisode = (eNum: number) => {
+    navigate(`/tv/${id}/season/${currentSeason}/episode/${eNum}`);
+  };
+
+  const handleToggleList = () => {
+    if (!show) return;
+    setInList(toggleWatchlist({
+      id: show.id,
+      title: show.title,
+      type: show.type,
+      posterUrl: show.posterUrl,
+      year: show.year,
+    }));
+  };
+
+  const activeSeasonData = show
+    ? show.seasons.find((s) => s.seasonNumber === currentSeason) || show.seasons[0]
+    : undefined;
+  const currentEp = activeSeasonData?.episodes.find((e) => e.episodeNumber === currentEpisode);
+
+  const episodeCards = useMemo(() => {
+    if (!activeSeasonData) return [];
+    return activeSeasonData.episodes.map((ep) => {
+      const isSelected = ep.episodeNumber === currentEpisode;
+      const progress = getWatchProgress(show?.id || '', currentSeason, ep.episodeNumber);
+      const isWatched = progress && (
+        progress.completed ||
+        (progress.duration > 0 && (progress.progress / progress.duration) > WATCHED_THRESHOLD)
+      );
+      const progressPercent = progress && progress.duration > 0
+        ? Math.min(100, Math.round((progress.progress / progress.duration) * 100))
+        : 0;
+
+      const handleToggleWatched = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!show) return;
+        if (isWatched) {
+          markEpisodeUnwatched(show.id, currentSeason, ep.episodeNumber);
+        } else {
+          markEpisodeWatched({
+            id: show.id,
+            title: show.title,
+            type: show.type,
+            posterUrl: show.posterUrl,
+            seasonNumber: currentSeason,
+            episodeNumber: ep.episodeNumber,
+            progress: 0,
+            duration: ep.runtime || 0,
+          });
+        }
+        setEpRefreshKey((k) => k + 1);
+      };
+
+      return (
+        <div
+          key={ep.episodeNumber}
+          onClick={() => handleSelectEpisode(ep.episodeNumber)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleSelectEpisode(ep.episodeNumber);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          className={`
+            group relative rounded-lg border text-left transition-all duration-200 cursor-pointer overflow-hidden
+            flex flex-col
+            hover:scale-[1.04] hover:shadow-xl hover:shadow-black/40 hover:border-slate-500
+            active:scale-[0.97]
+            ${isSelected
+              ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
+              : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
+            }
+          `}
+        >
+          <div className="aspect-[4/3] w-full relative overflow-hidden bg-slate-800">
+            {ep.stillPath ? (
+              <img
+                src={ep.stillPath}
+                alt=""
+                loading="lazy"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 relative">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-700/20 to-transparent" />
+                <Play className="w-5 h-5 text-slate-600/60" />
+              </div>
+            )}
+            
+            {isWatched && (
+              <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+            )}
+            
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            
+            <div className="absolute top-1 left-1">
+              <span className="text-[9px] font-bold text-white/90 bg-black/50 backdrop-blur-sm rounded px-1.5 py-0.5 border border-white/10 shadow-sm">
+                {ep.episodeNumber}
+              </span>
+            </div>
+            
+            {isWatched && (
+              <div className="absolute top-1 right-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
+              </div>
+            )}
+            
+            <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={handleToggleWatched}
+                aria-label={isWatched ? 'Mark as Unwatched' : 'Mark as Watched'}
+                className={`
+                  w-10 h-10 rounded-full border backdrop-blur-md
+                  flex items-center justify-center
+                  transform scale-75 group-hover:scale-100 transition-transform duration-300
+                  shadow-lg cursor-pointer
+                  ${isWatched
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-emerald-500/50'
+                    : 'bg-black/80 border-white/30 text-white hover:bg-black hover:scale-110'
+                  }
+                `}
+              >
+                {isWatched ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+            
+            {progressPercent > 0 && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                <div className="h-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" style={{ width: `${progressPercent}%` }} />
+              </div>
+            )}
+          </div>
+          
+          <div className="px-1.5 py-1.5">
+            <div className="text-[10px] text-slate-400 line-clamp-1 font-medium leading-tight group-hover:text-slate-200 transition-colors">
+              {ep.title || `Episode ${ep.episodeNumber}`}
+            </div>
+          </div>
+        </div>
+      );
+    });
+  }, [show?.id, currentSeason, currentEpisode, epRefreshKey, activeSeasonData, handleSelectEpisode]);
 
   useEffect(() => {
     if (!id) return;
@@ -41,17 +196,6 @@ export const TVShowPage: FC = () => {
       setLoading(false);
     });
   }, [id]);
-
-  const handleToggleList = () => {
-    if (!show) return;
-    setInList(toggleWatchlist({
-      id: show.id,
-      title: show.title,
-      type: show.type,
-      posterUrl: show.posterUrl,
-      year: show.year,
-    }));
-  };
 
   useEffect(() => {
     if (show) {
@@ -105,17 +249,6 @@ export const TVShowPage: FC = () => {
       </div>
     );
   }
-
-  const handleSelectSeason = (sNum: number) => {
-    navigate(`/tv/${id}/season/${sNum}/episode/1`);
-  };
-
-  const handleSelectEpisode = (eNum: number) => {
-    navigate(`/tv/${id}/season/${currentSeason}/episode/${eNum}`);
-  };
-
-  const activeSeasonData = show.seasons.find((s) => s.seasonNumber === currentSeason) || show.seasons[0];
-  const currentEp = activeSeasonData?.episodes.find((e) => e.episodeNumber === currentEpisode);
 
   return (
     <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -285,57 +418,7 @@ export const TVShowPage: FC = () => {
         </div>
 
         <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-1.5">
-          {activeSeasonData?.episodes.map((ep) => {
-            const isSelected = ep.episodeNumber === currentEpisode;
-            const progress = getWatchProgress(show.id, currentSeason, ep.episodeNumber);
-            const isWatched = progress && (
-              progress.completed ||
-              (progress.duration > 0 && (progress.progress / progress.duration) > WATCHED_THRESHOLD)
-            );
-
-            return (
-              <button
-                key={ep.episodeNumber}
-                type="button"
-                onClick={() => handleSelectEpisode(ep.episodeNumber)}
-                className={`rounded-md border text-left transition-all relative flex flex-col cursor-pointer overflow-hidden ${
-                  isSelected
-                    ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300 ring-2 ring-cyan-500/30'
-                    : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800 hover:border-slate-500 text-slate-300'
-                }`}
-              >
-                <div className="aspect-square w-full relative bg-slate-800 overflow-hidden">
-                  {ep.stillPath ? (
-                    <img
-                      src={ep.stillPath}
-                      alt=""
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-600 font-bold text-base">
-                      {ep.episodeNumber}
-                    </div>
-                  )}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-white font-black text-[4rem] leading-none drop-shadow-md bg-slate-950/70 rounded-lg px-3 py-1">
-                      {ep.episodeNumber}
-                    </span>
-                  </div>
-                  {isWatched && (
-                    <div className="absolute top-1 right-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400 drop-shadow-lg" />
-                    </div>
-                  )}
-                </div>
-                <div className="px-1 py-1">
-                  <div className="text-[9px] text-slate-400 line-clamp-1 font-normal leading-tight">
-                    {ep.title || `Episode ${ep.episodeNumber}`}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          {episodeCards}
         </div>
       </div>
 

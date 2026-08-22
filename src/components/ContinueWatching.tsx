@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import type { WatchProgress } from '../types';
-import { getAllWatchProgress, updateProgressPoster, updateProgressRating } from '../utils/storage';
+import { getAllWatchProgress, updateProgressPoster, updateProgressRating, removeWatchProgress } from '../utils/storage';
 import { getPosterUrl, getRatingUrl } from '../utils/posters';
-import { Play, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Clock, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 export const ContinueWatching: FC = () => {
   const [items, setItems] = useState<WatchProgress[]>([]);
@@ -131,6 +131,17 @@ export const ContinueWatching: FC = () => {
               ? Math.min(100, Math.round((item.progress / item.duration) * 100))
               : 0;
 
+            const handleRemove = (e: React.MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              removeWatchProgress(item.id, item.seasonNumber, item.episodeNumber);
+              setItems((prev) => prev.filter((i) => !(
+                i.id === item.id &&
+                i.seasonNumber === item.seasonNumber &&
+                i.episodeNumber === item.episodeNumber
+              )));
+            };
+
             return (
               <div key={`${item.id}_${item.seasonNumber}_${item.episodeNumber}`} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0 snap-start">
                 <Link
@@ -150,11 +161,31 @@ export const ContinueWatching: FC = () => {
                       </div>
                     )}
                     
-                    <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center pointer-events-none">
                       <div className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center shadow-lg shadow-cyan-500/30">
                         <Play className="w-6 h-6 fill-current translate-x-0.5" />
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRemove}
+                      aria-label={`Remove ${item.title} from Continue Watching`}
+                      className="
+                        absolute top-1.5 right-1.5 z-20
+                        flex items-center justify-center
+                        w-7 h-7 rounded-lg
+                        bg-black/70 border border-white/30
+                        text-white
+                        opacity-0 group-hover:opacity-100
+                        hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
+                        backdrop-blur-md
+                        transition-all duration-200 cursor-pointer
+                        shadow-lg shadow-black/40
+                      "
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
 
                     <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-slate-800">
                       <div
