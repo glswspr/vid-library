@@ -221,6 +221,29 @@ export const HomePage: FC = () => {
           </a>
         </div>
 
+        {!searchText && !hasSearched && (
+          <div className="mt-6 text-center">
+            <p className="text-slate-400 text-base mb-4">
+              Search for a movie or TV show to get started
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {['Inception', 'Breaking Bad', 'The Office', 'Interstellar', 'Stranger Things'].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    setSearchText(suggestion);
+                    performSearch(suggestion);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-300 hover:border-cyan-500 hover:text-cyan-300 transition-colors cursor-pointer"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Search results */}
         {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
           <div className="mt-4" id="search-results" role="listbox">

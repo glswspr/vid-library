@@ -284,7 +284,7 @@ export const TVShowPage: FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 lg:grid-cols-9 gap-1.5">
           {activeSeasonData?.episodes.map((ep) => {
             const isSelected = ep.episodeNumber === currentEpisode;
             const progress = getWatchProgress(show.id, currentSeason, ep.episodeNumber);
@@ -298,7 +298,7 @@ export const TVShowPage: FC = () => {
                 key={ep.episodeNumber}
                 type="button"
                 onClick={() => handleSelectEpisode(ep.episodeNumber)}
-                className={`rounded-lg border-2 text-left transition-all relative flex flex-col cursor-pointer overflow-hidden ${
+                className={`rounded-md border text-left transition-all relative flex flex-col cursor-pointer overflow-hidden ${
                   isSelected
                     ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300 ring-2 ring-cyan-500/30'
                     : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800 hover:border-slate-500 text-slate-300'
@@ -313,33 +313,25 @@ export const TVShowPage: FC = () => {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-600 font-bold text-lg">
+                    <div className="w-full h-full flex items-center justify-center text-slate-600 font-bold text-base">
                       {ep.episodeNumber}
                     </div>
                   )}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-white font-bold text-sm drop-shadow-md bg-slate-950/50 rounded px-1.5 py-0.5">
+                    <span className="text-white font-black text-[4rem] leading-none drop-shadow-md bg-slate-950/70 rounded-lg px-3 py-1">
                       {ep.episodeNumber}
                     </span>
                   </div>
                   {isWatched && (
                     <div className="absolute top-1 right-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 drop-shadow-lg" />
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400 drop-shadow-lg" />
                     </div>
                   )}
                 </div>
-                <div className="p-1.5">
-                  <div className="text-[10px] text-slate-400 line-clamp-1 font-normal leading-tight">
+                <div className="px-1 py-1">
+                  <div className="text-[9px] text-slate-400 line-clamp-1 font-normal leading-tight">
                     {ep.title || `Episode ${ep.episodeNumber}`}
                   </div>
-                  {progress && progress.duration > 0 && (
-                    <div className="w-full h-0.5 bg-slate-700 rounded-full mt-1 overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400"
-                        style={{ width: `${Math.min(100, (progress.progress / progress.duration) * 100)}%` }}
-                      />
-                    </div>
-                  )}
                 </div>
               </button>
             );

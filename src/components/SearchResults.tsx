@@ -35,7 +35,11 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
       className="w-full max-w-3xl mx-auto bg-slate-900/90 border-2 border-slate-700/60 rounded-2xl overflow-hidden shadow-2xl shadow-black/30 backdrop-blur"
       role="listbox"
       aria-label="Search results"
+      aria-live="polite"
     >
+      <span className="sr-only">
+        {results.length} result{results.length === 1 ? '' : 's'} found
+      </span>
       {results.map((result, index) => {
         const isSelected = index === selectedIndex;
         return (

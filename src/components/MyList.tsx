@@ -13,15 +13,14 @@ import { MediaCard } from './MediaCard';
  */
 export const MyList: FC = () => {
   const [items, setItems] = useState<WatchlistItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const refresh = useCallback(() => {
     setItems(getWatchlist());
   }, []);
 
   useEffect(() => {
-    refresh();
-    // Backfill posters for items saved while the 2embed API was unreachable
-    // (CORS) — resolve via TMDB and persist so the fix is permanent.
+    let cancelled = false;
     const backfill = async () => {
       const list = getWatchlist();
       await Promise.all(
@@ -36,13 +35,41 @@ export const MyList: FC = () => {
           }
         }),
       );
-      refresh();
+      if (!cancelled) refresh();
     };
-    backfill();
-    // Keep in sync with toggles made on detail pages in other tabs/sessions.
+
+    const timer = setTimeout(() => {
+      backfill().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, 300);
+
     window.addEventListener('storage', refresh);
-    return () => window.removeEventListener('storage', refresh);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('storage', refresh);
+    };
   }, [refresh]);
+
+  if (loading) {
+    return (
+      <section className="mb-12" aria-busy="true" aria-label="My List loading">
+        <div className="flex items-center gap-2 mb-4">
+          <Bookmark className="w-6 h-6 text-cyan-400" />
+          <h2 className="text-xl font-bold text-white tracking-tight">My List</h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i}>
+              <div className="aspect-[2/3] w-full bg-slate-800/60 rounded-xl animate-pulse mb-2" />
+              <div className="h-3 w-3/4 bg-slate-800/60 rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   if (items.length === 0) return null;
 

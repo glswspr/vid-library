@@ -8,9 +8,10 @@ import { Play, Clock } from 'lucide-react';
 
 export const ContinueWatching: FC = () => {
   const [items, setItems] = useState<WatchProgress[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // For TV shows, only keep the most recently watched episode per series.
+    let cancelled = false;
     const load = () => {
       const list = getAllWatchProgress();
       const latestByShow = new Map<string, WatchProgress>();
@@ -24,12 +25,9 @@ export const ContinueWatching: FC = () => {
           latestByShow.set(item.id, item);
         }
       }
-      setItems([...latestByShow.values()]);
+      if (!cancelled) setItems([...latestByShow.values()]);
     };
-    load();
-    load();
-    // Backfill posters for items saved while the 2embed API was unreachable
-    // (CORS) — resolve via TMDB and persist so the fix is permanent.
+
     const backfill = async () => {
       const list = getAllWatchProgress();
       await Promise.all(
@@ -48,10 +46,40 @@ export const ContinueWatching: FC = () => {
           }
         }),
       );
-      load();
+      if (!cancelled) load();
     };
-    backfill();
+
+    load();
+    const timer = setTimeout(() => {
+      backfill().finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
+
+  if (loading) {
+    return (
+      <section className="mb-12" aria-busy="true" aria-label="Continue Watching loading">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock className="w-6 h-6 text-cyan-400" />
+          <h2 className="text-xl font-bold text-white tracking-tight">Continue Watching</h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i}>
+              <div className="aspect-video w-full bg-slate-800/60 rounded-xl animate-pulse mb-2" />
+              <div className="h-3 w-3/4 bg-slate-800/60 rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   if (items.length === 0) return null;
 

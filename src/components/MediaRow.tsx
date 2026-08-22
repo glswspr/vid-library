@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, useMemo, memo, type ReactNode } from 'react';
 import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { MediaCard } from './MediaCard';
@@ -19,6 +19,12 @@ export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }
     if (!el) return;
     el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' });
   };
+
+  const renderedItems = useMemo(() => items.map((item) => (
+    <div key={item.id} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0">
+      <MediaCard item={item} />
+    </div>
+  )), [items]);
 
   return (
     <section className="mb-12">
@@ -58,14 +64,12 @@ export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }
             ref={scrollerRef}
             className="flex gap-4 overflow-x-auto pb-2 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {items.map((item) => (
-              <div key={item.id} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0">
-                <MediaCard item={item} />
-              </div>
-            ))}
+            {renderedItems}
           </div>
         </div>
       )}
     </section>
   );
 };
+
+export default memo(MediaRow);

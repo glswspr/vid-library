@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import type { MediaItem } from '../types';
@@ -67,3 +68,5 @@ export const MediaCard: FC<MediaCardProps> = ({ item }) => {
     </Link>
   );
 };
+
+export default memo(MediaCard);
