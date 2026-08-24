@@ -10,7 +10,34 @@
 
   var tvState = null; // { main, media, season, episode, grid }
 
-  /* ---------------- small building blocks ---------------- */
+  /* ============================================================
+     OFFLINE BANNER
+     ============================================================ */
+  var _offlineBanner = null;
+  function setupOfflineBanner() {
+    var banner = VL.el('div', { id: 'offline-banner', class: 'offline-banner' });
+    banner.appendChild(VL.el('span', { text: 'You are offline. Some features may not work.' }));
+    var btn = VL.el('button', { class: 'btn ghost focusable', text: 'Dismiss' });
+    btn.addEventListener('click', function () { banner.style.display = 'none'; });
+    banner.appendChild(btn);
+    document.body.appendChild(banner);
+    _offlineBanner = banner;
+
+    function updateOnlineStatus() {
+      if (navigator.onLine) {
+        banner.style.display = 'none';
+      } else {
+        banner.style.display = 'flex';
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
+  }
+
+  /* ============================================================
+     SMALL BUILDING BLOCKS
+     ============================================================ */
   function header() {
     var h = VL.el('header', { class: 'site-header' });
     var inner = VL.el('div', { class: 'wrap header-inner' });
@@ -18,6 +45,20 @@
     brand.appendChild(VL.el('span', { text: 'VidLibrary' }));
     brand.appendChild(VL.el('span', { class: 'brand-lite', text: 'LITE' }));
     inner.appendChild(brand);
+
+    // Settings button (placed on the right)
+    var settingsBtn = VL.el('button', {
+      id: 'settings-button',
+      class: 'btn-icon focusable',
+      title: 'Settings',
+      'aria-label': 'Settings'
+    });
+    settingsBtn.appendChild(VL.el('span', { class: 'settings-icon', text: '\u2699' }));
+    settingsBtn.addEventListener('click', function () {
+      location.hash = '#/settings';
+    });
+    inner.appendChild(settingsBtn);
+
     var home = VL.el('a', { href: '#/', class: 'btn ghost focusable', text: 'Home' });
     inner.appendChild(home);
     h.appendChild(inner);
@@ -26,9 +67,10 @@
 
   function footer() {
     var f = VL.el('footer', { class: 'site-footer' });
+    // AdGuard hint moved to settings menu; footer now only has copyright or nothing.
     f.appendChild(VL.el('div', {
       class: 'wrap',
-      html: 'Tip: use <a href="https://adguard.com" target="_blank" rel="noopener">AdGuard</a> to block popups and ads.'
+      html: 'VidLibrary Lite &copy; ' + new Date().getFullYear()
     }));
     return f;
   }
@@ -36,6 +78,8 @@
   function loadingBox(text) {
     return VL.el('div', { class: 'loading-box', text: text || 'Loading...' });
   }
+
+
 
   function notFoundBox(text, showBack) {
     var box = VL.el('div', { class: 'loading-box' });
@@ -72,6 +116,7 @@
 
     var body = VL.el('div', { class: 'card-body' });
     body.appendChild(VL.el('div', { class: 'card-title', text: item.title }));
+
     var meta = '';
     if (item.year) meta += item.year;
     if (opts.continue && item.duration > 0) {
@@ -79,7 +124,16 @@
       meta += meta ? ' \u00b7 ' : '';
       meta += pct + '%';
     }
+    if (item.duration && !opts.continue) {
+      meta += meta ? ' \u00b7 ' : '';
+      meta += formatDuration(item.duration);
+    }
+    if (item.rating) {
+      meta += meta ? ' \u00b7 ' : '';
+      meta += '\u2605 ' + item.rating;
+    }
     if (meta) body.appendChild(VL.el('div', { class: 'card-meta', text: meta }));
+
     if (opts.continue && item.duration > 0) {
       var bar = VL.el('div', { class: 'progress-track' });
       bar.appendChild(VL.el('div', {
@@ -88,11 +142,39 @@
       }));
       body.appendChild(bar);
     }
+
+    // Remove from Continue Watching button (only in continue mode)
+    if (opts.continue) {
+      var removeBtn = VL.el('button', {
+        class: 'btn-remove focusable',
+        title: 'Remove from Continue Watching',
+        'aria-label': 'Remove from Continue Watching'
+      });
+      removeBtn.appendChild(VL.el('span', { text: '\u2716' }));
+      removeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        VL.Store.removeWatchProgress(item.id, item.seasonNumber, item.episodeNumber);
+        // Remove the card from the DOM
+        a.parentNode.removeChild(a);
+      });
+      body.appendChild(removeBtn);
+    }
+
     a.appendChild(body);
     return a;
   }
 
+  function formatDuration(duration) {
+    if (!duration) return '';
+    var mins = parseInt(duration, 10);
+    if (!mins) return duration;
+    var h = Math.floor(mins / 60);
+    var m = mins % 60;
+    return h ? (h + 'h ' + m + 'm') : (m + 'm');
+  }
+
   function buildScroller(items, opts) {
+    opts = opts || {};
     var scroller = VL.el('div', { class: 'row-scroller' });
     if (!items || !items.length) {
       scroller.appendChild(VL.el('div', {
@@ -104,6 +186,25 @@
         scroller.appendChild(mediaCard(items[i], opts));
       }
     }
+    // Add scroll buttons
+    var leftBtn = VL.el('button', {
+      class: 'scroll-button focusable',
+      'aria-label': 'Scroll left',
+      innerHTML: '\u25C0'
+    });
+    leftBtn.addEventListener('click', function () {
+      scroller.scrollLeft -= 200;
+    });
+    var rightBtn = VL.el('button', {
+      class: 'scroll-button focusable',
+      'aria-label': 'Scroll right',
+      innerHTML: '\u25B6'
+    });
+    rightBtn.addEventListener('click', function () {
+      scroller.scrollLeft += 200;
+    });
+    scroller.appendChild(leftBtn);
+    scroller.appendChild(rightBtn);
     return scroller;
   }
 
@@ -127,20 +228,36 @@
     // Search
     main.appendChild(searchSection());
 
-    // IMDb / direct ID open
-    main.appendChild(imdbSection());
-
     // Continue Watching
     var cont = VL.Store.getProgressList();
     if (cont.length) {
-      var contItems = cont.map(function (p) {
-        return {
-          id: p.id, title: p.title, type: p.type, poster: p.posterUrl, year: '',
-          progress: p.progress, duration: p.duration,
-          seasonNumber: p.seasonNumber, episodeNumber: p.episodeNumber
-        };
+      // Backfill missing posters and ratings
+      var backfillPromises = cont.map(function (item) {
+        if (!item.poster || !item.rating) {
+          return VL.API.getMedia(item.id, item.type).then(function (media) {
+            if (media.poster) item.poster = media.poster;
+            if (media.rating) item.rating = media.rating;
+            return item;
+          });
+        } else {
+          return Promise.resolve(item);
+        }
       });
-      main.appendChild(mediaRow('Continue Watching', contItems, { continue: true }));
+      Promise.all(backfillPromises).then(function (filledItems) {
+        // Update the progress list with backfilled data (optional, but we can store it)
+        // We'll just use the filledItems for rendering.
+        var contItems = filledItems.map(function (p) {
+          return {
+            id: p.id, title: p.title, type: p.type, poster: p.posterUrl || p.poster, year: '',
+            progress: p.progress, duration: p.duration,
+            seasonNumber: p.seasonNumber, episodeNumber: p.episodeNumber
+          };
+        });
+        var contSection = mediaRow('Continue Watching', contItems, { continue: true });
+        main.appendChild(contSection);
+      });
+    } else {
+      // Hide Continue Watching when empty (already not adding the section)
     }
 
     // My List
@@ -242,38 +359,6 @@
     return sec;
   }
 
-  function imdbSection() {
-    var sec = VL.el('section', { class: 'imdb-section' });
-    var flex = VL.el('div', { class: 'imdb-flex' });
-    var input = VL.el('input', {
-      type: 'text',
-      class: 'imdb-input focusable',
-      placeholder: 'IMDb ID or URL (e.g. tt0120737)'
-    });
-    input.setAttribute('aria-label', 'Open by IMDb ID');
-    var btn = VL.el('button', { class: 'btn primary focusable', text: 'Open' });
-    var msg = VL.el('div', { class: 'form-msg' });
-    flex.appendChild(input);
-    flex.appendChild(btn);
-    sec.appendChild(flex);
-    sec.appendChild(msg);
-
-    function openIt() {
-      var id = VL.extractImdbId(input.value);
-      if (!id) {
-        msg.textContent = 'Enter a valid IMDb ID like tt0120737';
-        return;
-      }
-      msg.textContent = '';
-      location.hash = '#/movie/' + id;
-    }
-    btn.addEventListener('click', openIt);
-    input.addEventListener('keydown', function (e) {
-      if ((e.key || '') === 'Enter' || e.keyCode === 13) { e.preventDefault(); openIt(); }
-    });
-    return sec;
-  }
-
   /* ============================================================
      MOVIE
      ============================================================ */
@@ -339,16 +424,24 @@
     var metaParts = [];
     if (media.year) metaParts.push(media.year);
     if (media.rating) metaParts.push('\u2605 ' + media.rating);
+    if (media.duration) metaParts.push(formatDuration(media.duration));
     if (media.genre) metaParts.push(media.genre);
     if (metaParts.length) info.appendChild(VL.el('div', { class: 'detail-meta', text: metaParts.join(' \u00b7 ') }));
-    if (media.plot) info.appendChild(VL.el('p', { class: 'detail-plot', text: media.plot }));
+if (media.plot) {
+	var plotContainer = VL.el('div', { class: 'detail-plot-container' });
+	var plotText = VL.el('p', { class: 'detail-plot', text: media.plot });
+	plotContainer.appendChild(plotText);
+	// Expandable text: show first 4 lines, then show more/less removed
+	info.appendChild(plotContainer);
+    }
     hero.appendChild(info);
     main.appendChild(hero);
 
     // Player
     var playerBox = VL.el('div', { class: 'player-box' });
     main.appendChild(playerBox);
-    VL.Player.render(playerBox, media, season || 1, episode || 1);
+    // For movies, we don't have next season/episode, so pass null
+    VL.Player.render(playerBox, media, season || 1, episode || 1, null, null);
 
     // Similar
     addSimilarRow(main, media);
@@ -377,6 +470,7 @@
      TV SHOW
      ============================================================ */
   function tv(root, id, season, episode) {
+    console.log('TV id:', id, 'isNumeric:', VL.isNumeric(id));
     root.innerHTML = '';
     root.appendChild(header());
     var main = VL.el('main', { class: 'wrap' });
@@ -386,6 +480,7 @@
     main.appendChild(loadingBox('Loading...'));
 
     VL.API.getMedia(id, 'tv').then(function (media) {
+      console.log('TV media result:', media);
       main.innerHTML = '';
       if (!media) {
         main.appendChild(notFoundBox('TV show not found.', true));
@@ -396,10 +491,12 @@
         return;
       }
       renderTv(main, media, season || 1, episode || 1);
-    }).catch(function () {
-      main.innerHTML = '';
-      main.appendChild(notFoundBox('Could not load this show.', true));
-    });
+    }).catch(function (e) {
+       console.error('Failed to load TV show:', e);
+       console.error('Error stack:', e.stack);
+       main.innerHTML = '';
+       main.appendChild(notFoundBox('Could not load this show.', true));
+     });
   }
 
   function renderTv(main, media, season, episode) {
@@ -409,6 +506,7 @@
     // Top bar
     var bar = VL.el('div', { class: 'detail-top' });
     bar.appendChild(VL.el('a', { href: '#/', class: 'btn ghost focusable', text: '\u2190 Back' }));
+
     var inList = VL.Store.isInWatchlist(media.id);
     var listBtn = VL.el('button', {
       class: 'btn ghost focusable',
@@ -438,17 +536,102 @@
     if (media.year) metaParts.push(media.year);
     var seasonsCount = media.seasonsCount || 1;
     metaParts.push(seasonsCount + (seasonsCount === 1 ? ' season' : ' seasons'));
-    info.appendChild(VL.el('div', { class: 'detail-meta', text: metaParts.join(' \u00b7 ') }));
-    if (media.plot) info.appendChild(VL.el('p', { class: 'detail-plot', text: media.plot }));
+    if (media.duration) metaParts.push(formatDuration(media.duration));
+    if (media.rating) metaParts.push('\u2605 ' + media.rating);
+    if (metaParts.length) info.appendChild(VL.el('div', { class: 'detail-meta', text: metaParts.join(' \u00b7 ') }));
+if (media.plot) {
+       var plotContainer = VL.el('div', { class: 'detail-plot-container' });
+       var plotText = VL.el('p', { class: 'detail-plot', text: media.plot });
+       plotContainer.appendChild(plotText);
+       info.appendChild(plotContainer);
+     }
     hero.appendChild(info);
     main.appendChild(hero);
 
     // Player
     var playerBox = VL.el('div', { class: 'player-box' });
     main.appendChild(playerBox);
-    VL.Player.render(playerBox, media, season, episode);
+    // We need to compute next season and episode for the end overlay.
+    // We'll fetch the episodes for the current season to know the count,
+    // and also get the seasons list to know the next season.
+    // We'll do this after rendering the player, but we can pass null for now and update later?
+    // Instead, we'll fetch the necessary data and then call render.
+    // We'll change the approach: we'll fetch the episodes and seasons data first.
+    // However, to avoid delaying the player, we'll render the player with null next info,
+    // and then update the player's state when we have the data? But the player's render
+    // function doesn't have a way to update next info after render.
+    // We'll change the player's render function to accept nextSeason and nextEpisode.
+    // We'll compute them now.
+    VL.API.getEpisodes(media.id, 'tv', season).then(function (eps) {
+      var nextEpisode = null;
+      var nextSeason = season;
+      if (eps.length) {
+        var currentEpIdx = -1;
+        for (var i = 0; i < eps.length; i++) {
+          if (eps[i].episode === episode) { currentEpIdx = i; break; }
+        }
+        if (currentEpIdx !== -1 && currentEpIdx < eps.length - 1) {
+          nextEpisode = eps[currentEpIdx + 1].episode;
+        } else {
+          // End of season, check if there is a next season
+VL.API.getShowSeasons(media.id).then(function (seasonsList) {
+             var seasons = seasonsList.map(function (s) { return s.seasonNumber; });
+             var currentSeasonIdx = -1;
+             for (var i = 0; i < seasons.length; i++) {
+               if (seasons[i] === parseInt(season, 10)) { currentSeasonIdx = i; break; }
+             }
+             if (currentSeasonIdx !== -1 && currentSeasonIdx < seasons.length - 1) {
+               nextSeason = seasons[currentSeasonIdx + 1];
+               // Get first episode of next season
+               VL.API.getEpisodes(media.id, 'tv', nextSeason).then(function (nextEps) {
+                 if (nextEps.length) {
+                   nextEpisode = nextEps[0].episode;
+                 } else {
+                   nextEpisode = 1;
+                 }
+                 // Now render the player with the correct next info
+                 VL.Player.render(playerBox, media, season, episode, null, nextSeason, nextEpisode);
+               });
+             } else {
+               // No next season
+               nextSeason = null;
+               nextEpisode = null;
+               VL.Player.render(playerBox, media, season, episode, null, nextSeason, nextEpisode);
+             }
+           });
+          return; // Wait for the async calls above
+        }
+      } else {
+        // No episodes in this season? Try to get next season
+VL.API.getShowSeasons(media.id).then(function (seasonsList) {
+           var seasons = seasonsList.map(function (s) { return s.seasonNumber; });
+           var currentSeasonIdx = -1;
+           for (var i = 0; i < seasons.length; i++) {
+             if (seasons[i] === parseInt(season, 10)) { currentSeasonIdx = i; break; }
+           }
+           if (currentSeasonIdx !== -1 && currentSeasonIdx < seasons.length - 1) {
+             nextSeason = seasons[currentSeasonIdx + 1];
+           VL.API.getEpisodes(media.id, 'tv', nextSeason).then(function (nextEps) {
+             if (nextEps.length) {
+               nextEpisode = nextEps[0].episode;
+             } else {
+               nextEpisode = 1;
+             }
+             VL.Player.render(playerBox, media, season, episode, null, nextSeason, nextEpisode);
+           });
+           } else {
+             nextSeason = null;
+             nextEpisode = null;
+             VL.Player.render(playerBox, media, season, episode, null, nextSeason, nextEpisode);
+           }
+         });
+        return;
+      }
+      // If we have nextEpisode in the same season
+      VL.Player.render(playerBox, media, season, episode, null, nextSeason, nextEpisode);
+    });
 
-    // Episode header + prev/next
+    // Episode header + prev/next (with cross-season navigation)
     var epHeader = VL.el('div', { class: 'ep-header' });
     epHeader.appendChild(VL.el('div', { class: 'ep-label', text: 'Season ' + season + ' \u00b7 Episode ' + episode }));
     var navBtns = VL.el('div', { class: 'ep-nav' });
@@ -464,106 +647,250 @@
     // Season chips
     var chips = VL.el('div', { class: 'season-chips' });
     chips.setAttribute('aria-label', 'Select season');
-    for (var s = 1; s <= seasonsCount; s++) {
-      (function (sn) {
-        var chip = VL.el('button', {
-          class: 'chip focusable' + (sn === season ? ' active' : ''),
-          text: 'S' + sn
-        });
-        chip.addEventListener('click', function () {
-          location.hash = '#/tv/' + media.id + '/season/' + sn + '/episode/1';
-        });
-        chips.appendChild(chip);
-      })(s);
-    }
-    main.appendChild(chips);
+VL.API.getShowSeasons(media.id).then(function (seasonsList) {
+       var seasons = seasonsList.map(function (s) { return s.seasonNumber; });
+       for (var s = 0; s < seasons.length; s++) {
+         (function (sn) {
+           var chip = VL.el('button', {
+             class: 'chip focusable' + (sn === season ? ' active' : ''),
+             text: 'S' + sn
+           });
+           chip.addEventListener('click', function () {
+             location.hash = '#/tv/' + media.id + '/season/' + sn + '/episode/1';
+           });
+           chips.appendChild(chip);
+         })(seasons[s]);
+       }
+       main.appendChild(chips);
+     });
 
     // Episode grid
     var grid = VL.el('div', { class: 'ep-grid' });
     main.appendChild(grid);
     tvState.grid = grid;
-
-    function goEpisode(delta) {
+function goEpisode(delta) {
       VL.API.getEpisodes(media.id, 'tv', season).then(function (eps) {
         if (!eps.length) return;
         var idx = -1;
         for (var i = 0; i < eps.length; i++) {
           if (eps[i].episode === episode) { idx = i; break; }
         }
-        var target = idx === -1 ? 1 : (eps[idx + delta] && eps[idx + delta].episode);
-        if (target) location.hash = '#/tv/' + media.id + '/season/' + season + '/episode/' + target;
+        var targetIdx = idx + delta;
+        var targetSeason = season;
+        var targetEpisode = null;
+
+        if (targetIdx < 0) {
+          // Go to previous season
+VL.API.getShowSeasons(media.id).then(function (seasonsList) {
+             var seasons = seasonsList.map(function (s) { return s.seasonNumber; });
+             var currentSeasonIdx = -1;
+             for (var i = 0; i < seasons.length; i++) {
+               if (seasons[i] === parseInt(season, 10)) { currentSeasonIdx = i; break; }
+             }
+             if (currentSeasonIdx > 0) {
+               targetSeason = seasons[currentSeasonIdx - 1];
+               VL.API.getEpisodes(media.id, 'tv', targetSeason).then(function (prevEps) {
+                 if (prevEps.length) {
+                   targetEpisode = prevEps[prevEps.length - 1].episode;
+                   location.hash = '#/tv/' + media.id + '/season/' + targetSeason + '/episode/' + targetEpisode;
+                 }
+               });
+             }
+           });
+        } else if (targetIdx >= eps.length) {
+          // Go to next season
+VL.API.getShowSeasons(media.id).then(function (seasonsList) {
+             var seasons = seasonsList.map(function (s) { return s.seasonNumber; });
+             var currentSeasonIdx = -1;
+             for (var i = 0; i < seasons.length; i++) {
+               if (seasons[i] === parseInt(season, 10)) { currentSeasonIdx = i; break; }
+             }
+             if (currentSeasonIdx < seasons.length - 1) {
+               targetSeason = seasons[currentSeasonIdx + 1];
+               VL.API.getEpisodes(media.id, 'tv', targetSeason).then(function (nextEps) {
+                 if (nextEps.length) {
+                   targetEpisode = nextEps[0].episode;
+                   location.hash = '#/tv/' + media.id + '/season/' + targetSeason + '/episode/' + targetEpisode;
+                 }
+               });
+             }
+           });
+        } else {
+          // Same season
+          targetEpisode = eps[targetIdx].episode;
+          location.hash = '#/tv/' + media.id + '/season/' + season + '/episode/' + targetEpisode;
+        }
       });
     }
 
-    grid.appendChild(loadingBox('Loading episodes...'));
-    VL.API.getEpisodes(media.id, 'tv', season).then(function () {
-      renderGrid();
-    });
+    // Render episode grid with watched toggle
+    function renderGrid() {
+      if (!tvState || !tvState.grid) return;
+      var grid = tvState.grid;
+      var media = tvState.media;
+      var season = tvState.season;
+      grid.innerHTML = '';
+
+      VL.API.getEpisodes(media.id, 'tv', season).then(function (list) {
+        if (!list.length) {
+          grid.appendChild(VL.el('div', { class: 'row-empty', text: 'No episode data available.' }));
+          return;
+        }
+        for (var i = 0; i < list.length; i++) {
+          grid.appendChild(episodeBtn(list[i]));
+        }
+      });
+    }
+
+    function episodeBtn(ep) {
+      var active = ep.episode === tvState.episode;
+      var prog = VL.Store.getProgress(tvState.media.id, tvState.season, ep.episode);
+      var watched = prog && prog.duration > 0 && (prog.progress / prog.duration) > 0.85;
+
+      var btn = VL.el('button', {
+        class: 'ep-btn focusable' + (active ? ' active' : ''),
+        'data-ep': ep.episode
+      });
+      var topRow = VL.el('div', { class: 'ep-btn-top' });
+      topRow.appendChild(VL.el('span', { class: 'ep-num', text: 'Episode ' + ep.episode }));
+      if (watched) topRow.appendChild(VL.el('span', { class: 'ep-watched', text: '\u2713' }));
+      btn.appendChild(topRow);
+      if (ep.title && ep.title !== ('Episode ' + ep.episode)) {
+        btn.appendChild(VL.el('div', { class: 'ep-title', text: ep.title }));
+      }
+      if (prog && prog.duration > 0) {
+        var tr = VL.el('div', { class: 'progress-track' });
+        tr.appendChild(VL.el('div', {
+          class: 'progress-fill',
+          style: { width: Math.min(100, (prog.progress / prog.duration) * 100) + '%' }
+        }));
+        btn.appendChild(tr);
+      }
+      // Watched toggle button (only if not active, to avoid interference with play)
+      if (!active) {
+        var toggleBtn = VL.el('button', {
+          class: 'ep-toggle-watched focusable',
+          title: watched ? 'Mark as unwatched' : 'Mark as watched',
+          'aria-label': watched ? 'Mark as unwatched' : 'Mark as watched'
+        });
+        toggleBtn.appendChild(VL.el('span', { text: watched ? '\u2606' : '\u2605' }));
+        toggleBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (watched) {
+            VL.Store.markEpisodeUnwatched(tvState.media.id, tvState.season, ep.episode);
+          } else {
+            VL.Store.markEpisodeWatched({
+              id: tvState.media.id,
+              title: tvState.media.title,
+              type: tvState.media.type,
+              posterUrl: tvState.media.posterUrl || '',
+              seasonNumber: tvState.season,
+              episodeNumber: ep.episode,
+              progress: prog ? prog.duration : 0,
+              duration: prog ? prog.duration : 0
+            });
+          }
+          // Update the button icon
+          var icon = toggleBtn.firstChild;
+          icon.textContent = watched ? '\u2606' : '\u2605';
+          toggleBtn.title = watched ? 'Mark as unwatched' : 'Mark as watched';
+          toggleBtn.setAttribute('aria-label', toggleBtn.title);
+          // Refresh progress bars in case the grid is visible
+          if (tvState.grid) {
+            VL.Views.refreshProgress();
+          }
+        });
+        btn.appendChild(toggleBtn);
+      }
+      btn.addEventListener('click', function () {
+        location.hash = '#/tv/' + tvState.media.id + '/season/' + tvState.season + '/episode/' + ep.episode;
+      });
+      return btn;
+    }
+
+    renderGrid();
 
     // Initial focus: first server button.
     var firstServer = VL.qs('.server-btn', playerBox);
     if (firstServer) firstServer.focus();
   }
 
-  function renderGrid() {
-    if (!tvState || !tvState.grid) return;
-    var grid = tvState.grid;
-    var media = tvState.media;
-    var season = tvState.season;
-    grid.innerHTML = '';
+  /* ============================================================
+     SETTINGS PAGE
+     ============================================================ */
+  function settings(root) {
+    root.innerHTML = '';
+    root.appendChild(header());
+    var main = VL.el('main', { class: 'wrap' });
+    root.appendChild(main);
+    root.appendChild(footer());
 
-    var eps = [];
-    VL.API.getEpisodes(media.id, 'tv', season).then(function (list) {
-      eps = list;
-      grid.innerHTML = '';
-      if (!eps.length) {
-        grid.appendChild(VL.el('div', { class: 'row-empty', text: 'No episode data available.' }));
-        return;
-      }
-      for (var i = 0; i < eps.length; i++) {
-        grid.appendChild(episodeBtn(eps[i]));
-      }
+    var settings = VL.Store.getSettings();
+
+    var form = VL.el('form', { class: 'settings-form' });
+    form.appendChild(VL.el('h2', { class: 'settings-title', text: 'Settings' }));
+
+    // Default provider
+    var providerLabel = VL.el('label', { class: 'settings-label', for: 'provider-select', text: 'Default server' });
+    var providerSelect = VL.el('select', { id: 'provider-select', class: 'settings-input focusable' });
+    var providers = [
+      { id: 'vidrock', name: 'Server 1', sub: 'VidRock' },
+      { id: 'vidapi', name: 'Server 2', sub: 'VidAPI' },
+      { id: 'videasy', name: 'Server 3', sub: 'Videoasy' },
+      { id: 'peachify', name: 'Server 4', sub: 'Peachify' },
+      { id: 'vidsrc', name: 'Server 5', sub: 'VidSrc' },
+      { id: 'vidcore', name: 'Server 6', sub: 'VidCore' },
+      { id: 'vidzee', name: 'Server 7', sub: 'VidZee' }
+    ];
+    providers.forEach(function (p) {
+      var option = VL.el('option', { value: p.id, text: p.name + ' (' + p.sub + ')' });
+      if (p.id === settings.defaultProvider) option.selected = true;
+      providerSelect.appendChild(option);
     });
-  }
+    form.appendChild(providerLabel);
+    form.appendChild(providerSelect);
 
-  function episodeBtn(ep) {
-    var active = ep.episode === tvState.episode;
-    var prog = VL.Store.getProgress(tvState.media.id, tvState.season, ep.episode);
-    var watched = prog && prog.duration > 0 && (prog.progress / prog.duration) > 0.85;
+    // Autoplay next
+    var autoplayLabel = VL.el('label', { class: 'settings-label', for: 'autoplay-checkbox', text: 'Autoplay next episode' });
+    var autoplayCheckbox = VL.el('input', { type: 'checkbox', id: 'autoplay-checkbox', class: 'settings-input focusable' });
+    autoplayCheckbox.checked = settings.autoplayNext;
+    form.appendChild(autoplayLabel);
+    form.appendChild(autoplayCheckbox);
 
-    var btn = VL.el('button', {
-      class: 'ep-btn focusable' + (active ? ' active' : ''),
-      'data-ep': ep.episode
+    // Accent color (we can't change it in lite, but we show the current value)
+    var accentLabel = VL.el('label', { class: 'settings-label', for: 'accent-color', text: 'Accent color' });
+    var accentInput = VL.el('input', { type: 'text', id: 'accent-color', class: 'settings-input focusable', placeholder: '#06b6d4' });
+    accentInput.value = settings.accentColor;
+    accentInput.readOnly = true;
+    form.appendChild(accentLabel);
+    form.appendChild(accentInput);
+
+    // Save button
+    var saveBtn = VL.el('button', { class: 'btn primary focusable', text: 'Save' });
+    saveBtn.addEventListener('click', function () {
+      var partial = {
+        defaultProvider: providerSelect.value,
+        autoplayNext: autoplayCheckbox.checked
+        // accentColor is read-only, so we don't save it
+      };
+      VL.Store.saveSettings(partial);
+      // Show saved feedback
+      saveBtn.textContent = 'Saved!';
+      setTimeout(function () { saveBtn.textContent = 'Save'; }, 1500);
     });
-    var topRow = VL.el('div', { class: 'ep-btn-top' });
-    topRow.appendChild(VL.el('span', { class: 'ep-num', text: 'Episode ' + ep.episode }));
-    if (watched) topRow.appendChild(VL.el('span', { class: 'ep-watched', text: '\u2713' }));
-    btn.appendChild(topRow);
-    if (ep.title && ep.title !== ('Episode ' + ep.episode)) {
-      btn.appendChild(VL.el('div', { class: 'ep-title', text: ep.title }));
-    }
-    if (prog && prog.duration > 0) {
-      var tr = VL.el('div', { class: 'progress-track' });
-      tr.appendChild(VL.el('div', {
-        class: 'progress-fill',
-        style: { width: Math.min(100, (prog.progress / prog.duration) * 100) + '%' }
-      }));
-      btn.appendChild(tr);
-    }
-    btn.addEventListener('click', function () {
-      location.hash = '#/tv/' + tvState.media.id + '/season/' + tvState.season + '/episode/' + ep.episode;
-    });
-    return btn;
-  }
+    form.appendChild(saveBtn);
 
-  /* Refresh progress bars live during playback (called by the player). */
-  function refreshProgress() {
-    if (!tvState || !tvState.grid) return;
-    // Re-render only the grid; do not disturb the focused video/server.
-    var focus = document.activeElement;
-    var inGrid = focus && tvState.grid === focus.parentNode;
-    renderGrid();
-    if (inGrid && focus) try { focus.focus(); } catch (e) {}
+    // AdGuard hint (moved from footer)
+    var adguardBox = VL.el('div', { class: 'settings-adguard' });
+    adguardBox.appendChild(VL.el('p', { text: 'Tip: use ' }));
+    var adguardLink = VL.el('a', { href: 'https://adguard.com', target: '_blank', rel: 'noopener', text: 'AdGuard' });
+    adguardBox.appendChild(adguardLink);
+    adguardBox.appendChild(VL.el('span', { text: ' to block popups and ads.' }));
+    form.appendChild(adguardBox);
+
+    main.appendChild(form);
+
+    document.title = 'Settings - VidLibrary Lite';
   }
 
   /* ============================================================
@@ -578,10 +905,24 @@
     root.appendChild(footer());
   }
 
+  /* Refresh progress bars live during playback (called by the player). */
+  function refreshProgress() {
+    if (!tvState || !tvState.grid) return;
+    // Re-render only the grid; do not disturb the focused video/server.
+    var focus = document.activeElement;
+    var inGrid = focus && tvState.grid === focus.parentNode;
+    renderGrid();
+    if (inGrid && focus) try { focus.focus(); } catch (e) {}
+  }
+
+  // Initialize offline banner
+  setupOfflineBanner();
+
   VL.Views = {
     home: home,
     movie: movie,
     tv: tv,
+    settings: settings,
     notfound: notfound,
     refreshProgress: refreshProgress
   };

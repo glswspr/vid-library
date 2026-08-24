@@ -134,31 +134,48 @@
   VL.Promise = P;
 
   /* ---------------- XHR helper (fetch not available on old TVs) ---------------- */
-  VL.xhr = function (opts) {
-    return new P(function (resolve, reject) {
-      var xhr = new XMLHttpRequest();
-      xhr.open(opts.method || 'GET', opts.url, true);
-      if (opts.headers) {
-        for (var k in opts.headers) {
-          if (opts.headers.hasOwnProperty(k)) xhr.setRequestHeader(k, opts.headers[k]);
-        }
-      }
-      if (opts.timeout) xhr.timeout = opts.timeout;
-      xhr.onreadystatechange = function () {
-        if (xhr.readyState !== 4) return;
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(xhr.responseText);
-        } else if (xhr.status === 0) {
-          reject(new Error('Network error'));
-        } else {
-          reject(new Error('HTTP ' + xhr.status));
-        }
-      };
-      xhr.onerror = function () { reject(new Error('Network error')); };
-      xhr.ontimeout = function () { reject(new Error('Timeout')); };
-      xhr.send(opts.body || null);
-    });
-  };
+VL.xhr = function (opts) {
+     console.log('VL.xhr opts:', opts);
+     return new P(function (resolve, reject) {
+       var xhr = new XMLHttpRequest();
+       xhr.open(opts.method || 'GET', opts.url, true);
+       // Set a default User-Agent to avoid being blocked by some APIs
+       if (!opts.headers || !opts.headers['User-Agent']) {
+         xhr.setRequestHeader('User-Agent', 'VidLibrary Lite (https://github.com/behro/vid-library)');
+         console.log('Set default User-Agent');
+       } else {
+         console.log('User-Agent already set:', opts.headers['User-Agent']);
+       }
+       if (opts.headers) {
+         for (var k in opts.headers) {
+           if (opts.headers.hasOwnProperty(k)) xhr.setRequestHeader(k, opts.headers[k]);
+         }
+       }
+       if (opts.timeout) xhr.timeout = opts.timeout;
+       xhr.onreadystatechange = function () {
+         if (xhr.readyState !== 4) return;
+         if (xhr.status >= 200 && xhr.status < 300) {
+           resolve(xhr.responseText);
+         } else {
+           console.error('XHR error:', xhr.status, xhr.statusText, xhr.responseURL);
+           if (xhr.status === 0) {
+             reject(new Error('Network error'));
+           } else {
+             reject(new Error('HTTP ' + xhr.status));
+           }
+         }
+       };
+       xhr.onerror = function () {
+         console.error('XHR network error');
+         reject(new Error('Network error'));
+       };
+       xhr.ontimeout = function () {
+         console.error('XHR timeout');
+         reject(new Error('Timeout'));
+       };
+       xhr.send(opts.body || null);
+     });
+   };
 
   /* ---------------- DOM helpers ---------------- */
   VL.qs = function (sel, root) { return (root || document).querySelector(sel); };

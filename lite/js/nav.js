@@ -27,6 +27,9 @@
     var movie = h.match(/^\/movie\/([^\/]+)$/);
     if (movie) return { name: 'movie', id: movie[1] };
 
+    var settings = h.match(/^\/settings$/);
+    if (settings) return { name: 'settings' };
+
     return { name: 'notfound' };
   }
 
@@ -38,6 +41,7 @@
     if (route.name === 'home') VL.Views.home(root);
     else if (route.name === 'movie') VL.Views.movie(root, route.id);
     else if (route.name === 'tv') VL.Views.tv(root, route.id, route.season, route.episode);
+    else if (route.name === 'settings') VL.Views.settings(root);
     else VL.Views.notfound(root);
   }
 

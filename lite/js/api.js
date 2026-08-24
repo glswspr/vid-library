@@ -1,7 +1,8 @@
 /* ============================================================
    api.js - VidLibrary Lite
-   Data layer: 2embed catalog, TMDB, Wikidata search, and the
-   VidVault direct-MP4 source. All network via XHR, all code ES5.
+   Data layer: 2embed catalog, TMDB, Wikidata search.
+   The VidVault direct-MP4 path was removed (never reliable on old TVs);
+   the player is embed-only like the main app. All code ES5.
    Every function returns a VL.Promise.
    ============================================================ */
 (function () {
@@ -13,26 +14,15 @@
   // Same fallback key the main app / VidRock bundle uses.
   var TMDB_KEY = '54e00466a09676df57ba51c4ca30b1a6';
 
-  // VidVault direct-MP4 API (CORS-open, verified).
-  var VV_TOKEN = 'https://vidvault.ru/api/get-token';
-  var VV_PROXY = 'https://vidvault.ru/api/download-proxy';
-  var STREAM_PROXY = 'https://vlaq11.site';
-
-  var vvToken = null;
+  var tmdbIdCache = {};  // key: imdbId -> { id, type } (or null)
   var mediaCache = {};   // key: type:id  -> media object
   var epCache = {};      // key: id:season -> episodes array
-  var tmdbIdCache = {};  // key: imdbId -> numeric tmdb id (or null)
+  var seasonListCache = {};  // key: id -> seasons array [{seasonNumber, episodeCount}]
 
   /* ---------------- low-level JSON helpers ---------------- */
   function getJSON(url, timeoutMs) {
     var opts = { url: url };
     if (timeoutMs) opts.timeout = timeoutMs;
-    return VL.xhr(opts).then(function (text) { return JSON.parse(text); });
-  }
-
-  function postJSON(url, body, headers) {
-    var opts = { url: url, method: 'POST', body: JSON.stringify(body) };
-    if (headers) opts.headers = headers;
     return VL.xhr(opts).then(function (text) { return JSON.parse(text); });
   }
 
@@ -73,6 +63,7 @@
           title: it.title || it.name || 'Untitled',
           year: (it.release_date || it.first_air_date || '').substring(0, 4),
           poster: it.poster_path ? ('https://image.tmdb.org/t/p/w342' + it.poster_path) : '',
+          rating: it.vote_average ? Number(it.vote_average).toFixed(1) : '',
           type: type
         });
       }
@@ -117,17 +108,21 @@
         tmdbId: String(data.id),
         title: data.title || data.name || 'Untitled',
         year: (data.release_date || data.first_air_date || '').substring(0, 4),
-        poster: data.poster_path ? ('https://image.tmdb.org/t/p/w342' + data.poster_path) : '',
+        poster: data.poster_path ? ('https://image.tmdb.org/t/p/w500' + data.poster_path) : '',
         rating: data.vote_average ? Number(data.vote_average).toFixed(1) : '',
         genre: (data.genres || []).map(function (g) { return g.name; }).join(', '),
         plot: data.overview || '',
-        seasonsCount: data.number_of_seasons || 0
+        seasonsCount: data.number_of_seasons || 0,
+        duration: data.runtime ? String(data.runtime) : '',
+        cast: (data.credits && data.credits.cast)
+          ? data.credits.cast.slice(0, 12).map(function (c) { return c.name; })
+          : '',
+        type: type
       };
     }).catch(function () { return null; });
   }
 
   /* ---------------- Combined detail resolution ---------------- */
-  // Returns a media object keyed by the ORIGINAL id (imdb or numeric).
   function _getMedia(id, type) {
     if (VL.isNumeric(id)) {
       return tmdbDetail(id, type).then(function (td) {
@@ -166,6 +161,12 @@
     return getJSON(url, 8000).then(function (data) {
       var d = data && data[type === 'movie' ? 'movie' : 'tv'];
       if (!d) return null;
+      // 2embed cast may be an array or a comma-separated string.
+      var cast = '';
+      if (d.cast) {
+        if (typeof d.cast === 'string') cast = d.cast;
+        else if (Object.prototype.toString.call(d.cast) === '[object Array]') cast = d.cast.join(', ');
+      }
       return {
         id: id,
         title: d.title || id,
@@ -175,6 +176,8 @@
         genre: d.genre || '',
         plot: d.plot || '',
         seasonsCount: d.seasons || 0,
+        duration: d.duration || '',
+        cast: cast,
         type: type
       };
     }).catch(function () { return null; });
@@ -188,11 +191,20 @@
       var eps = (data && data.episodes) || [];
       for (var i = 0; i < eps.length; i++) {
         var ep = eps[i];
+        var epNum = ep.episode_number !== undefined && ep.episode_number !== null
+          ? ep.episode_number
+          : (ep.episode !== undefined && ep.episode !== null ? ep.episode : (i + 1));
+        // 2embed season endpoint may proxy TMDB — skip episode 0 (specials).
+        if (epNum === 0) continue;
         out.push({
-          season: ep.season !== undefined && ep.season !== null ? ep.season : season,
-          episode: ep.episode !== undefined && ep.episode !== null ? ep.episode : (i + 1),
-          title: ep.title || ('Episode ' + (ep.episode || (i + 1))),
-          overview: ep.overview || ''
+          season: ep.season_number !== undefined && ep.season_number !== null
+            ? ep.season_number
+            : (ep.season !== undefined && ep.season !== null ? ep.season : season),
+          episode: epNum,
+          title: ep.name || ep.title || ('Episode ' + epNum),
+          overview: ep.overview || '',
+          stillPath: '',
+          runtime: 0
         });
       }
       return out;
@@ -206,11 +218,16 @@
       var eps = (data && data.episodes) || [];
       for (var i = 0; i < eps.length; i++) {
         var ep = eps[i];
+        var epNum = ep.episode_number;
+        // TMDB's per-season endpoint includes episode 0 (specials) — skip it.
+        if (epNum === 0) continue;
         out.push({
           season: season,
-          episode: ep.episode_number,
-          title: ep.name || ('Episode ' + ep.episode_number),
-          overview: ep.overview || ''
+          episode: epNum,
+          title: ep.name || ('Episode ' + epNum),
+          overview: ep.overview || '',
+          stillPath: ep.still_path ? ('https://image.tmdb.org/t/p/w300' + ep.still_path) : '',
+          runtime: ep.runtime || 0
         });
       }
       return out;
@@ -250,10 +267,59 @@
         season: season,
         episode: i,
         title: 'Episode ' + i,
-        overview: ''
+        overview: '',
+        stillPath: '',
+        runtime: 0
       });
     }
     return out;
+  }
+
+  /* ---------------- Show seasons (for chips + cross-season nav) ---------------- */
+  // Mirrors main app's getTVShowDetails: resolves IMDb -> TMDB, then fetches
+  // the season metadata endpoint to get per-season episode_count. Returns
+  // [{ seasonNumber, episodeCount }] and caches for deduplication.
+  function getShowSeasons(id) {
+    var cacheKey = id;
+    if (seasonListCache[cacheKey]) return VL.Promise.resolve(seasonListCache[cacheKey]);
+
+    if (VL.isNumeric(id)) {
+      return tmdbSeasonCount(id, 'tv').then(function (seasons) {
+        seasonListCache[cacheKey] = seasons;
+        return seasons;
+      });
+    }
+
+    // IMDb id: resolve TMDB, then fetch seasons.
+    return tmdbFind(id).then(function (found) {
+      if (!found) return [];
+      return tmdbSeasonCount(found.id, found.type).then(function (seasons) {
+        seasonListCache[cacheKey] = seasons;
+        return seasons;
+      });
+    });
+  }
+
+  function tmdbSeasonCount(tmdbId, type) {
+    var url = TMDB + '/' + type + '/' + tmdbId + '?api_key=' + TMDB_KEY;
+    return getJSON(url, 10000).then(function (data) {
+      var seasonMeta = (data && data.seasons) || [];
+      var seasons = [];
+      for (var i = 0; i < seasonMeta.length; i++) {
+        var s = seasonMeta[i];
+        if (s.season_number <= 0) continue;
+        seasons.push({
+          seasonNumber: s.season_number,
+          episodeCount: s.episode_count
+        });
+      }
+      if (seasons.length === 0) {
+        seasons.push({ seasonNumber: 1, episodeCount: 12 });
+      }
+      return seasons;
+    }).catch(function () {
+      return [{ seasonNumber: 1, episodeCount: 12 }];
+    });
   }
 
   /* ---------------- Search (TMDB -> Wikidata) ---------------- */
@@ -368,6 +434,7 @@
             title: it.title || it.name || 'Untitled',
             year: (it.release_date || it.first_air_date || '').substring(0, 4),
             poster: it.poster_path ? ('https://image.tmdb.org/t/p/w342' + it.poster_path) : '',
+            rating: it.vote_average ? Number(it.vote_average).toFixed(1) : '',
             type: type
           });
         }
@@ -386,103 +453,33 @@
     }).catch(function () { return []; });
   }
 
-  /* ---------------- VidVault direct MP4 ---------------- */
-  function vvGetToken() {
-    if (vvToken && Date.now() < vvToken.e) return VL.Promise.resolve(vvToken.t);
-    return VL.xhr({ url: VV_TOKEN, timeout: 10000 }).then(function (text) {
-      var data = JSON.parse(text);
-      if (!data || !data.t) throw new Error('VidVault: no token');
-      vvToken = data;
-      return data.t;
-    });
-  }
-
-  // opts: { id, type, season, episode, title }
-  function getDirectSources(opts) {
-    var tmdbPromise;
-    if (VL.isNumeric(opts.id)) {
-      tmdbPromise = VL.Promise.resolve(opts.id);
-    } else {
-      tmdbPromise = tmdbFind(opts.id).then(function (f) { return f ? f.id : null; });
+  /* ---------------- TMDB backfill for posters/ratings ---------------- */
+  // Mirrors main app's resolvePosterUrl / fetchTmdbRating: resolves IMDb -> TMDB,
+  // then pulls poster path (w500) and vote_average. Used by CW/My List to
+  // backfill missing posters and ratings.
+  function resolvePosterAndRating(imdbId, type) {
+    var cached = tmdbIdCache[imdbId];
+    if (cached !== undefined && cached) {
+      return resolvePosterAndRatingFromTmdb(cached.id, cached.type);
     }
-    return tmdbPromise.then(function (tmdbId) {
-      if (!tmdbId) return { sources: [], subtitles: [], error: 'No TMDB id for direct playback.' };
-      return vvGetToken().then(function (token) {
-        var body = { type: opts.type, tmdbId: String(tmdbId) };
-        if (opts.type === 'tv') { body.season = opts.season; body.episode = opts.episode; }
-        return postJSON(VV_PROXY, body, {
-          'Content-Type': 'application/json',
-          'x-request-token': token
-        }).then(function (data) {
-          var mp4 = (data.mp4Data && data.mp4Data.downloadInfo && data.mp4Data.downloadInfo.data) ||
-            (data.mp4Data && data.mp4Data.data);
-          var downloads = (mp4 && mp4.downloads) || [];
-          var captions = (mp4 && mp4.captions) || [];
-          var sources = [];
-          for (var i = 0; i < downloads.length; i++) {
-            var d = downloads[i];
-            if (!d.url || d.vipLocked) continue;
-            sources.push({
-              url: STREAM_PROXY + '/' + encodeURIComponent(d.url) + '?n=' + encodeURIComponent(opts.title || 'video'),
-              quality: d.resolution ? String(d.resolution) + 'p' : '',
-              size: d.size || ''
-            });
-          }
-          sources.sort(function (a, b) {
-            return (parseInt(b.quality, 10) || 0) - (parseInt(a.quality, 10) || 0);
-          });
-          var subs = [];
-          for (var j = 0; j < captions.length; j++) {
-            var c = captions[j];
-            if (!c.url) continue;
-            subs.push({ label: c.lanName || c.lan || 'Subtitle', file: c.url, lan: c.lan || '' });
-          }
-          return { sources: sources, subtitles: subs };
-        });
-      });
-    }).catch(function (err) {
-      return { sources: [], subtitles: [], error: (err && err.message) || 'Direct source unavailable.' };
+    return tmdbFind(imdbId).then(function (found) {
+      if (!found) return { poster: '', rating: '' };
+      return resolvePosterAndRatingFromTmdb(found.id, found.type);
     });
   }
 
-  /* ---------------- Subtitles (SRT -> VTT as same-origin blob) ---------------- */
-  function srtToVtt(url) {
-    return VL.xhr({ url: url, timeout: 10000 }).then(function (text) {
-      var vtt = convertSrt(text);
-      return VL.blobUrlFromText(vtt, 'text/vtt');
+  function resolvePosterAndRatingFromTmdb(tmdbId, type) {
+    var url = TMDB + '/' + type + '/' + tmdbId + '?api_key=' + TMDB_KEY;
+    return getJSON(url, 10000).then(function (data) {
+      if (!data) return { poster: '', rating: '' };
+      var poster = data.poster_path
+        ? ('https://image.tmdb.org/t/p/w500' + data.poster_path)
+        : '';
+      var rating = data.vote_average ? Number(data.vote_average).toFixed(1) : '';
+      return { poster: poster, rating: rating };
+    }).catch(function () {
+      return { poster: '', rating: '' };
     });
-  }
-
-  function toBlobUrl(url) {
-    return VL.xhr({ url: url, timeout: 10000 }).then(function (text) {
-      return VL.blobUrlFromText(text, 'text/vtt');
-    });
-  }
-
-  function convertSrt(text) {
-    if (typeof text !== 'string') return 'WEBVTT\n\n';
-    var out = ['WEBVTT', ''];
-    var blocks = String(text).split(/\r?\n\r?\n/);
-    for (var i = 0; i < blocks.length; i++) {
-      var block = String(blocks[i]).replace(/\r/g, '');
-      if (!block || !block.trim()) continue;
-      var lines = block.split('\n');
-      var timeIdx = -1;
-      for (var j = 0; j < lines.length; j++) {
-        if (/\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/.test(lines[j])) {
-          timeIdx = j;
-          break;
-        }
-      }
-      if (timeIdx === -1) continue;
-      var cueText = lines.slice(timeIdx + 1).join('\n').trim();
-      if (!cueText) continue;
-      var timing = lines[timeIdx].replace(/,/g, '.');
-      out.push(timing);
-      out.push(cueText);
-      out.push('');
-    }
-    return out.join('\n');
   }
 
   /* ---------------- public API ---------------- */
@@ -490,11 +487,10 @@
     trending: trending,
     getMedia: getMedia,
     getEpisodes: getEpisodes,
+    getShowSeasons: getShowSeasons,
     search: search,
     similar: similar,
-    getDirectSources: getDirectSources,
     tmdbFind: tmdbFind,
-    srtToVtt: srtToVtt,
-    toBlobUrl: toBlobUrl
+    resolvePosterAndRating: resolvePosterAndRating
   };
 })();

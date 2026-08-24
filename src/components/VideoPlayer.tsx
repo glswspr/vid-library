@@ -16,6 +16,7 @@ import { getSettings } from '../utils/settings';
 import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star, Maximize, Minimize } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
+import { resolveImdbToTmdb } from '../utils/tv';
 import ServerStatusDot from './ServerStatusDot';
 import EndOfContentOverlay from './EndOfContentOverlay';
 
@@ -229,11 +230,53 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
   const iframeKey = `${providerId}|${media.id}|${season}|${episode}`;
   const [embedUrl, setEmbedUrl] = useState<string>('');
+  // Track the resolved TMDB ID separately so the async resolution
+  // doesn't cause re-render loops, and we can use the resolved ID
+  // in the embed URL generation for TMDB-required providers.
+  const [resolvedTmdbId, setResolvedTmdbId] = useState<string | null>(null);
+  // First: resolve IMDB to TMDB asynchronously when needed
+  useEffect(() => {
+    let cancelled = false;
+    // For providers that require numeric TMDB IDs (peachify, videasy, vidzee),
+    // resolve IMDB ID to TMDB ID if we only have an IMDB ID.
+    // This prevents "PDF file not found" errors caused by passing IMDB IDs
+    // (tt1234567) to servers that expect numeric TMDB IDs.
+    if (
+      providerId === 'peachify' ||
+      providerId === 'videasy' ||
+      providerId === 'vidzee'
+    ) {
+      if (media.imdbId && !media.tmdbId && !resolvedTmdbId) {
+        ;(async () => {
+          const tmdbId = await resolveImdbToTmdb(media.imdbId as string);
+          if (!cancelled) setResolvedTmdbId(tmdbId);
+        })();
+      }
+    }
+  }, [providerId, media.imdbId, media.tmdbId, resolvedTmdbId]);
+
+  // Second: generate the embed URL using the resolved TMDB ID
   useEffect(() => {
     let cancelled = false;
     const saved = getWatchProgress(media.id, season, episode);
+
+    // Determine the ID to pass to getEmbedUrl:
+    // - For TMDB-required providers: use resolved TMDB ID if available,
+    //   otherwise fall back to TMDB ID or IMDB ID or raw ID
+    // - For other providers: use imdbId || tmdbId || id as before
+    let embedId: string;
+    if (
+      providerId === 'peachify' ||
+      providerId === 'videasy' ||
+      providerId === 'vidzee'
+    ) {
+      embedId = resolvedTmdbId || media.tmdbId || media.imdbId || media.id;
+    } else {
+      embedId = media.imdbId || media.tmdbId || media.id;
+    }
+
     const result = getProvider(providerId).getEmbedUrl({
-      id: media.imdbId || media.tmdbId || media.id,
+      id: embedId,
       type: media.type,
       season,
       episode,
@@ -246,7 +289,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
       setEmbedUrl(result);
     }
     return () => { cancelled = true; };
-  }, [providerId, media.imdbId, media.tmdbId, media.id, media.type, season, episode]);
+  }, [providerId, media.imdbId, media.tmdbId, resolvedTmdbId, media.type, season, episode]);
 
   useEffect(() => {
     if (!isIframeLoaded) {
@@ -418,7 +461,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
               src={embedUrl}
               className="w-full h-full border-0"
               referrerPolicy="origin"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allow="autoplay; fullscreen; encrypted-media"
               allowFullScreen
               onLoad={() => {
                 setIsIframeLoaded(true);
