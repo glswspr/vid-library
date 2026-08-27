@@ -3,6 +3,8 @@
  * tailor itself: bigger targets, stronger focus rings, no backdrop blur.
  */
 
+import { FALLBACK_TMDB_API_KEY } from '../services/config';
+
 export function isTvDevice(): boolean {
   if (typeof window === 'undefined') return false;
 
@@ -61,7 +63,7 @@ export async function resolveImdbToTmdb(imdbId: string): Promise<string | null> 
   // Use the existing TMDB resolution from metadata service
   // We need to import it, but to avoid circular dependencies,
   // we'll do a simple fetch here
-  const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || import.meta.env.VITE_FALLBACK_TMDB_API_KEY || '';
+  const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || import.meta.env.VITE_FALLBACK_TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
 
   if (!TMDB_API_KEY) {
     // No TMDB key available, can't resolve
