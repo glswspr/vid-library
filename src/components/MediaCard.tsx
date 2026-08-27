@@ -1,17 +1,43 @@
-import { memo } from 'react';
-import type { FC } from 'react';
+import { memo, useEffect, useState } from 'react';
+import type { FC, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { MediaItem } from '../types';
-import { Play, Star } from 'lucide-react';
+import { isInWatchlist, toggleWatchlist } from '../utils/storage';
+import { Bookmark, BookmarkCheck, Play, Star } from 'lucide-react';
 
 interface MediaCardProps {
   item: MediaItem;
 }
 
 export const MediaCard: FC<MediaCardProps> = ({ item }) => {
+  const [inList, setInList] = useState<boolean>(() => isInWatchlist(item.id));
+
+  useEffect(() => {
+    const sync = () => setInList(isInWatchlist(item.id));
+    window.addEventListener('watchlist-changed', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('watchlist-changed', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, [item.id]);
+
   const targetUrl = item.type === 'movie'
     ? `/movie/${item.id}`
     : `/tv/${item.id}/season/1/episode/1`;
+
+  const handleToggleList = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleWatchlist({
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      posterUrl: item.posterUrl,
+      year: item.year,
+      rating: item.rating,
+    });
+  };
 
   return (
     <Link
@@ -52,6 +78,26 @@ export const MediaCard: FC<MediaCardProps> = ({ item }) => {
             <span>{item.rating}</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={handleToggleList}
+          aria-pressed={inList}
+          aria-label={inList ? `Remove ${item.title} from My List` : `Add ${item.title} to My List`}
+          title={inList ? 'Remove from My List' : 'Add to My List'}
+          className={`
+            absolute bottom-2.5 right-2.5 z-10
+            flex items-center justify-center
+            w-8 h-8 rounded-full border backdrop-blur-md
+            shadow-lg shadow-black/40 transition-all duration-200 cursor-pointer
+            ${inList
+              ? 'bg-cyan-500 border-cyan-400 text-slate-950 opacity-100'
+              : 'bg-black/70 border-white/30 text-white hover:bg-black hover:border-cyan-400 hover:text-cyan-300 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+            }
+          `}
+        >
+          {inList ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
+        </button>
       </div>
 
       <div className="p-3 flex flex-col justify-between flex-1">

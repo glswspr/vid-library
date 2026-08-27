@@ -45,10 +45,12 @@ export const MyList: FC = () => {
     }, 300);
 
     window.addEventListener('storage', refresh);
+    window.addEventListener('watchlist-changed', refresh);
     return () => {
       cancelled = true;
       clearTimeout(timer);
       window.removeEventListener('storage', refresh);
+      window.removeEventListener('watchlist-changed', refresh);
     };
   }, [refresh]);
 

@@ -158,14 +158,17 @@ export function toggleWatchlist(
   item: Omit<WatchlistItem, 'updatedAt'>,
 ): boolean {
   const items = readJson<Record<string, WatchlistItem>>(KEYS.WATCHLIST, {});
+  let added: boolean;
   if (items[item.id]) {
     delete items[item.id];
-    writeJson(KEYS.WATCHLIST, items);
-    return false;
+    added = false;
+  } else {
+    items[item.id] = { ...item, updatedAt: Date.now() };
+    added = true;
   }
-  items[item.id] = { ...item, updatedAt: Date.now() };
   writeJson(KEYS.WATCHLIST, items);
-  return true;
+  window.dispatchEvent(new Event('watchlist-changed'));
+  return added;
 }
 
 // --- Batched progress writes -------------------------------------------------
