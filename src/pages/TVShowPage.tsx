@@ -6,8 +6,8 @@ import { getTVShowDetails } from '../services/catalog';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
-import { ArrowLeft, ChevronLeft, ChevronRight, Tv, CheckCircle2, Bookmark, BookmarkCheck, Play, Eye, EyeOff } from 'lucide-react';
-import { getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched } from '../utils/storage';
+import { ArrowLeft, ChevronLeft, ChevronRight, Tv, Check, Bookmark, BookmarkCheck, Play, Eye, EyeOff } from 'lucide-react';
+import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow } from '../utils/storage';
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
@@ -54,6 +54,16 @@ export const TVShowPage: FC = () => {
     ? show.seasons.find((s) => s.seasonNumber === currentSeason) || show.seasons[0]
     : undefined;
   const currentEp = activeSeasonData?.episodes.find((e) => e.episodeNumber === currentEpisode);
+
+  const resumeTarget = useMemo(() => {
+    if (!show) return null;
+    return getAllWatchProgress().find(
+      (p) => p.id === show.id && p.type === 'tv' && p.seasonNumber != null && p.episodeNumber != null,
+    ) || null;
+  }, [show, epRefreshKey]);
+  const isOnResumeTarget = resumeTarget != null &&
+    resumeTarget.seasonNumber === currentSeason &&
+    resumeTarget.episodeNumber === currentEpisode;
 
   const episodeCards = useMemo(() => {
     if (!activeSeasonData) return [];
@@ -107,7 +117,9 @@ export const TVShowPage: FC = () => {
             active:scale-[0.97]
             ${isSelected
               ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
-              : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
+              : isWatched
+                ? 'bg-slate-800/40 border-emerald-500/60 shadow-sm shadow-emerald-500/10 hover:bg-slate-800'
+                : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
             }
           `}
         >
@@ -126,11 +138,11 @@ export const TVShowPage: FC = () => {
               </div>
             )}
             
-            {isWatched && (
-              <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
-            )}
-            
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+            {isWatched && (
+              <div className="absolute inset-0 bg-emerald-500/25 ring-1 ring-inset ring-emerald-400/50 pointer-events-none" />
+            )}
             
             <div className="absolute top-1 left-1">
               <span className="text-[9px] font-bold text-white/90 bg-black/50 backdrop-blur-sm rounded px-1.5 py-0.5 border border-white/10 shadow-sm">
@@ -139,8 +151,8 @@ export const TVShowPage: FC = () => {
             </div>
             
             {isWatched && (
-              <div className="absolute top-1 right-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.6)]" />
+              <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_6px_rgba(52,211,153,0.7)]">
+                <Check className="w-3 h-3 text-slate-950" strokeWidth={3.5} />
               </div>
             )}
             
@@ -192,6 +204,7 @@ export const TVShowPage: FC = () => {
     getTVShowDetails(id).then((data) => {
       setShow(data);
       setLoading(false);
+      if (data.genre) updateProgressGenreForShow(data.id, data.genre);
     }).catch(() => {
       setLoading(false);
     });
@@ -329,6 +342,17 @@ export const TVShowPage: FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {resumeTarget && !isOnResumeTarget && (
+            <button
+              type="button"
+              onClick={() => navigate(`/tv/${id}/season/${resumeTarget.seasonNumber}/episode/${resumeTarget.episodeNumber}`)}
+              className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
+            >
+              <Play className="w-5 h-5 fill-current" />
+              Resume S{resumeTarget.seasonNumber} E{resumeTarget.episodeNumber}
+            </button>
+          )}
+
           {prevSeasonNum && prevEpisodeNum && (
             <button
               type="button"

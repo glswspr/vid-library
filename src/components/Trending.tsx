@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { fetchTrendingMovies, fetchTrendingTVShows } from '../services/catalog';
+import { useSettings } from '../hooks/useSettings';
 import { MediaCard } from './MediaCard';
 import { Skeleton } from './Skeleton';
 import { Film, Tv, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -15,6 +16,7 @@ import { Film, Tv, ChevronLeft, ChevronRight } from 'lucide-react';
 export const Trending: FC = () => {
   const [movies, setMovies] = useState<MediaItem[] | null>(null);
   const [shows, setShows] = useState<MediaItem[] | null>(null);
+  const [settings] = useSettings();
   const movieScrollerRef = useRef<HTMLDivElement>(null);
   const showScrollerRef = useRef<HTMLDivElement>(null);
 
@@ -25,9 +27,11 @@ export const Trending: FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    setMovies(null);
+    setShows(null);
     Promise.all([
-      fetchTrendingMovies().catch(() => [] as MediaItem[]),
-      fetchTrendingTVShows().catch(() => [] as MediaItem[]),
+      fetchTrendingMovies(1, settings.englishOnly).catch(() => [] as MediaItem[]),
+      fetchTrendingTVShows(1, settings.englishOnly).catch(() => [] as MediaItem[]),
     ]).then(([movieList, showList]) => {
       if (cancelled) return;
       setMovies(movieList);
@@ -36,7 +40,7 @@ export const Trending: FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [settings.englishOnly]);
 
   const loading = movies === null || shows === null;
 

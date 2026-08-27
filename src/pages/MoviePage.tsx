@@ -7,7 +7,7 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
 import { ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
-import { isInWatchlist, toggleWatchlist } from '../utils/storage';
+import { isInWatchlist, toggleWatchlist, updateProgressGenreForShow } from '../utils/storage';
 import ExpandableText from '../components/ExpandableText';
 
 const formatRuntime = (duration?: string): string => {
@@ -33,6 +33,7 @@ export const MoviePage: FC = () => {
       setMovie(data);
       setLoading(false);
       document.title = `${data.title} (${data.year || 'Movie'}) - VidLibrary`;
+      if (data.genre) updateProgressGenreForShow(data.id, data.genre);
     }).catch(() => {
       setLoading(false);
     });

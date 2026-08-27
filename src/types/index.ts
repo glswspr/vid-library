@@ -48,6 +48,7 @@ export interface WatchProgress {
   seasonNumber?: number;
   episodeNumber?: number;
   rating?: string;
+  genre?: string; // Comma-separated genre names, backfilled from media details
   progress: number; // Seconds
   duration: number; // Seconds
   completed?: boolean; // True when the episode was finished (drives the watched checkmark)

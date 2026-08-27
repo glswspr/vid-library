@@ -7,6 +7,7 @@ import { SearchResults } from '../components/SearchResults';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { MyList } from '../components/MyList';
 import { Trending } from '../components/Trending';
+import { HomeRows } from '../components/HomeRows';
 import { FOCUS_SEARCH_EVENT } from '../components/Navbar';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { isTvDevice } from '../utils/tv';
@@ -258,6 +259,9 @@ export const HomePage: FC = () => {
 
       {/* Recommendations (Trending Movies / Trending TV Shows) */}
       <Trending />
+
+      {/* Curated rows: Top Rated, New This Month, Because You Watched, Coming Soon, Genre rows */}
+      <HomeRows />
     </div>
   );
 };

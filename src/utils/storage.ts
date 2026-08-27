@@ -1,5 +1,5 @@
 import type { ProviderId, WatchlistItem, WatchProgress } from '../types';
-import { PROVIDER_MEMORY_MAX_ENTRIES } from '../constants';
+import { PROGRESS_FLUSH_DELAY_MS, PROVIDER_MEMORY_MAX_ENTRIES } from '../constants';
 
 // Every storage operation is guarded against quota errors and serialization
 // failures so the app degrades gracefully instead of crashing.
@@ -168,29 +168,90 @@ export function toggleWatchlist(
   return true;
 }
 
+// --- Batched progress writes -------------------------------------------------
+// Rapid PLAYER_EVENT messages during playback would otherwise re-serialize the
+// whole progress map to localStorage several times per second. Instead, all
+// progress mutations update an in-memory cache immediately (so reads stay
+// consistent) and the actual write is coalesced: requestIdleCallback flushes
+// when the main thread is free, with a hard 2-second cap via its timeout
+// option (setTimeout fallback where requestIdleCallback is unavailable).
+// A synchronous flush on page hide/close prevents losing buffered progress.
+
+let progressCache: Record<string, WatchProgress> | null = null;
+let progressFlushPending = false;
+
+function ensureProgressCache(): Record<string, WatchProgress> {
+  if (progressCache === null) {
+    progressCache = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  }
+  return progressCache;
+}
+
+function writeProgressCacheNow(): void {
+  progressFlushPending = false;
+  if (progressCache !== null) {
+    writeJson(KEYS.PROGRESS, progressCache);
+  }
+}
+
+function scheduleProgressFlush(): void {
+  if (progressFlushPending) return;
+  progressFlushPending = true;
+  const flush = () => {
+    // A synchronous flush (page hide) or page lifecycle may have already run.
+    if (!progressFlushPending) return;
+    writeProgressCacheNow();
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(flush, { timeout: PROGRESS_FLUSH_DELAY_MS });
+  } else {
+    setTimeout(flush, PROGRESS_FLUSH_DELAY_MS);
+  }
+}
+
+function mutateProgress(fn: (items: Record<string, WatchProgress>) => void): void {
+  const items = ensureProgressCache();
+  fn(items);
+  scheduleProgressFlush();
+}
+
+if (typeof window !== 'undefined') {
+  const flushBufferedProgress = () => writeProgressCacheNow();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushBufferedProgress();
+  });
+  window.addEventListener('pagehide', flushBufferedProgress);
+}
+
 export function getAllWatchProgress(): WatchProgress[] {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  const items = ensureProgressCache();
   return Object.values(items).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function getWatchProgress(id: string, season?: number, episode?: number): WatchProgress | null {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
+  const items = ensureProgressCache();
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
   return items[key] || null;
 }
 
 export function saveWatchProgress(progress: WatchProgress): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
-  const key = progress.seasonNumber && progress.episodeNumber 
+  const key = progress.seasonNumber && progress.episodeNumber
     ? `${progress.id}_s${progress.seasonNumber}e${progress.episodeNumber}`
     : progress.id;
 
-  items[key] = {
-    ...progress,
-    updatedAt: Date.now()
-  };
-
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    const existing = items[key];
+    // Merge with the stored entry so backfilled metadata (genre, rating,
+    // poster) survives partial updates from player events.
+    items[key] = {
+      ...existing,
+      ...progress,
+      posterUrl: progress.posterUrl || existing?.posterUrl,
+      rating: progress.rating || existing?.rating,
+      genre: progress.genre || existing?.genre,
+      updatedAt: Date.now()
+    };
+  });
 }
 
 /** Persist a resolved rating onto a stored watchlist item (no-op if it already has one). */
@@ -209,12 +270,12 @@ export function updateProgressRating(
   season?: number,
   episode?: number,
 ): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
-  const item = items[key];
-  if (!item || item.rating) return;
-  item.rating = rating;
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    const item = items[key];
+    if (!item || item.rating) return;
+    item.rating = rating;
+  });
 }
 
 /** Persist a resolved poster onto a stored watchlist item (no-op if it already has one). */
@@ -233,47 +294,62 @@ export function updateProgressPoster(
   season?: number,
   episode?: number,
 ): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
-  const item = items[key];
-  if (!item || item.posterUrl) return;
-  item.posterUrl = posterUrl;
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    const item = items[key];
+    if (!item || item.posterUrl) return;
+    item.posterUrl = posterUrl;
+  });
+}
+
+/** Persist a resolved genre onto every stored progress entry of a title. */
+export function updateProgressGenreForShow(id: string, genre: string): void {
+  if (!genre) return;
+  mutateProgress((items) => {
+    for (const item of Object.values(items)) {
+      if (item.id === id && !item.genre) item.genre = genre;
+    }
+  });
 }
 
 /** Remove a single watch progress entry by key. */
 export function removeWatchProgress(id: string, season?: number, episode?: number): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
-  delete items[key];
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    delete items[key];
+  });
 }
 
 export function clearWatchHistory(): void {
-  writeJson(KEYS.PROGRESS, {});
+  progressCache = {};
+  writeProgressCacheNow();
   writeJson(KEYS.PROVIDER_MEMORY, {});
 }
 
 /** Mark an episode as fully watched (completed=true, progress=duration). */
 export function markEpisodeWatched(progress: Omit<WatchProgress, 'completed' | 'updatedAt'>): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
   const key = progress.seasonNumber && progress.episodeNumber
     ? `${progress.id}_s${progress.seasonNumber}e${progress.episodeNumber}`
     : progress.id;
-  const now = Date.now();
-  items[key] = {
-    ...progress,
-    completed: true,
-    progress: progress.duration,
-    updatedAt: now,
-  };
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    const existing = items[key];
+    items[key] = {
+      ...existing,
+      ...progress,
+      posterUrl: progress.posterUrl || existing?.posterUrl,
+      rating: progress.rating || existing?.rating,
+      genre: progress.genre || existing?.genre,
+      completed: true,
+      progress: progress.duration,
+      updatedAt: Date.now(),
+    };
+  });
 }
 
 /** Mark an episode as unwatched (remove progress entry). */
 export function markEpisodeUnwatched(id: string, season?: number, episode?: number): void {
-  const items = readJson<Record<string, WatchProgress>>(KEYS.PROGRESS, {});
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
-  delete items[key];
-  writeJson(KEYS.PROGRESS, items);
+  mutateProgress((items) => {
+    delete items[key];
+  });
 }

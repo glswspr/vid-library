@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import type { WatchProgress } from '../types';
-import { getAllWatchProgress, updateProgressPoster, updateProgressRating, removeWatchProgress } from '../utils/storage';
-import { getPosterUrl, getRatingUrl } from '../utils/posters';
+import { getAllWatchProgress, updateProgressPoster, updateProgressRating, updateProgressGenreForShow, removeWatchProgress } from '../utils/storage';
+import { getPosterUrl, getRatingUrl, getGenre } from '../utils/posters';
 import { Play, Clock, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 export const ContinueWatching: FC = () => {
@@ -51,8 +51,14 @@ export const ContinueWatching: FC = () => {
               updateProgressRating(item.id, rating, item.seasonNumber, item.episodeNumber);
             }
           }
+          if (!item.genre) {
+            const genre = await getGenre(item.id, item.type);
+            if (genre) updateProgressGenreForShow(item.id, genre);
+          }
         }),
       );
+      // Let dependent views (e.g. watch stats) know stored entries changed.
+      window.dispatchEvent(new Event('watch-progress-updated'));
       if (!cancelled) load();
     };
 

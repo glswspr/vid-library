@@ -3,6 +3,9 @@ import type { FC } from 'react';
 import { Settings, Trash2, X } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { clearWatchHistory } from '../utils/settings';
+import { getMovieGenres } from '../services/rows';
+import type { Genre } from '../services/rows';
+import { GENRE_ROWS_MAX } from '../constants';
 import { PROVIDERS } from '../providers';
 import type { ProviderId } from '../types';
 
@@ -10,6 +13,25 @@ export const SettingsMenu: FC = () => {
   const [open, setOpen] = useState<boolean>(false);
   const ref = useRef<HTMLDivElement>(null);
   const [settings, update] = useSettings();
+  const [genres, setGenres] = useState<Genre[] | null>(null);
+
+  useEffect(() => {
+    if (!open || genres !== null) return;
+    let cancelled = false;
+    getMovieGenres().then((list) => {
+      if (!cancelled && list.length > 0) setGenres(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, genres]);
+
+  const toggleGenreRow = (id: number, checked: boolean) => {
+    const next = checked
+      ? [...settings.genreRows, id].slice(0, GENRE_ROWS_MAX)
+      : settings.genreRows.filter((g) => g !== id);
+    update({ genreRows: next });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -83,6 +105,53 @@ export const SettingsMenu: FC = () => {
           <p className="text-[11px] text-slate-500 mb-3">
             Availability depends on the selected server.
           </p>
+
+          <label className="flex items-center justify-between mb-1 cursor-pointer">
+            <span className="text-sm text-slate-300 font-medium">English-only trending</span>
+            <input
+              type="checkbox"
+              checked={settings.englishOnly}
+              onChange={(e) => update({ englishOnly: e.target.checked })}
+              className="w-5 h-5 accent-cyan-500 cursor-pointer"
+            />
+          </label>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Hides non-English originals from home recommendations.
+          </p>
+
+          <div className="mb-4">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Genre rows</span>
+            <p className="text-[11px] text-slate-500 mt-1 mb-2">
+              Pick up to {GENRE_ROWS_MAX} genres to show on the home page.
+            </p>
+            {genres === null ? (
+              <p className="text-xs text-slate-500 py-1">Loading genres…</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 max-h-36 overflow-y-auto pr-1">
+                {genres.map((g) => {
+                  const checked = settings.genreRows.includes(g.id);
+                  const disabled = !checked && settings.genreRows.length >= GENRE_ROWS_MAX;
+                  return (
+                    <label
+                      key={g.id}
+                      className={`flex items-center gap-2 text-sm rounded px-1 py-0.5 ${
+                        disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={(e) => toggleGenreRow(g.id, e.target.checked)}
+                        className="w-4 h-4 shrink-0 accent-cyan-500 cursor-pointer"
+                      />
+                      <span className="text-slate-300 line-clamp-1">{g.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <label className="block mb-4">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Accent color</span>

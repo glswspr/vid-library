@@ -176,7 +176,48 @@ export async function resolvePosterUrl(
 }
 
 const tmdbRatingCache = new Map<string, { value: string | null; at: number }>();
+const tmdbGenreCache = new Map<string, { value: string | null; at: number }>();
 const TMDB_RATING_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+// Shared cache for TMDB detail responses (rating + genres come from the same
+// endpoint), so genre lookups don't duplicate rating lookups' requests.
+interface TmdbDetailsCached {
+  rating?: string;
+  genre?: string;
+  at: number;
+}
+const tmdbDetailsCache = new Map<string, TmdbDetailsCached>();
+
+async function fetchTmdbDetailsCached(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+): Promise<TmdbDetailsCached | null> {
+  const cacheKey = `${type}:${tmdbId}`;
+  const cached = tmdbDetailsCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TMDB_RATING_CACHE_TTL) return cached;
+
+  const key = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!key) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${key}`,
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const value: TmdbDetailsCached = {
+      rating: data.vote_average ? data.vote_average.toFixed(1) : undefined,
+      genre: Array.isArray(data.genres) && data.genres.length > 0
+        ? data.genres.map((g: { name: string }) => g.name).join(', ')
+        : undefined,
+      at: Date.now(),
+    };
+    tmdbDetailsCache.set(cacheKey, value);
+    return value;
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchTmdbRating(
   imdbId: string,
@@ -192,19 +233,29 @@ export async function fetchTmdbRating(
     return undefined;
   }
 
-  const key = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!key) return undefined;
+  const details = await fetchTmdbDetailsCached(tmdb.id, type);
+  const rating = details?.rating;
+  tmdbRatingCache.set(cacheKey, { value: rating ?? null, at: Date.now() });
+  return rating;
+}
 
-  try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/${type}/${tmdb.id}?api_key=${key}`,
-    );
-    if (!res.ok) return undefined;
-    const data = await res.json();
-    const rating = data.vote_average ? data.vote_average.toFixed(1) : undefined;
-    tmdbRatingCache.set(cacheKey, { value: rating ?? null, at: Date.now() });
-    return rating;
-  } catch {
+/** Best-effort comma-separated genre list for an IMDb ID (cached TMDB detail). */
+export async function fetchTmdbGenre(
+  imdbId: string,
+  type: 'movie' | 'tv',
+): Promise<string | undefined> {
+  const cacheKey = `${type}:${imdbId}`;
+  const cached = tmdbGenreCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TMDB_RATING_CACHE_TTL) return cached.value ?? undefined;
+
+  const tmdb = await resolveTmdbFromImdb(imdbId, type);
+  if (!tmdb) {
+    tmdbGenreCache.set(cacheKey, { value: null, at: Date.now() });
     return undefined;
   }
+
+  const details = await fetchTmdbDetailsCached(tmdb.id, type);
+  const genre = details?.genre;
+  tmdbGenreCache.set(cacheKey, { value: genre ?? null, at: Date.now() });
+  return genre;
 }

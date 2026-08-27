@@ -86,7 +86,10 @@ function mapTrendingItem(item: Embed2TrendingItem, type: 'movie' | 'tv'): MediaI
   };
 }
 
-export async function fetchTrendingMovies(page: number = 1): Promise<MediaItem[]> {
+export async function fetchTrendingMovies(page: number = 1, englishOnly: boolean = true): Promise<MediaItem[]> {
+  const discover = await fetchDiscoverTmdb('movie', englishOnly, page);
+  if (discover.length > 0) return discover;
+
   const data = await fetch2embed<Embed2TrendingResponse>(`/trending?page=${page}`);
   let items = (data?.results ?? [])
     .map((item) => mapTrendingItem(item, 'movie'))
@@ -96,7 +99,10 @@ export async function fetchTrendingMovies(page: number = 1): Promise<MediaItem[]
   return fetchTrendingTmdb('movie');
 }
 
-export async function fetchTrendingTVShows(page: number = 1): Promise<MediaItem[]> {
+export async function fetchTrendingTVShows(page: number = 1, englishOnly: boolean = true): Promise<MediaItem[]> {
+  const discover = await fetchDiscoverTmdb('tv', englishOnly, page);
+  if (discover.length > 0) return discover;
+
   const data = await fetch2embed<Embed2TrendingResponse>(`/trendingtv?page=${page}`);
   let items = (data?.results ?? [])
     .map((item) => mapTrendingItem(item, 'tv'))
@@ -106,8 +112,48 @@ export async function fetchTrendingTVShows(page: number = 1): Promise<MediaItem[
   return fetchTrendingTmdb('tv');
 }
 
+// Quality gates for the home rows: TMDB discover, popularity-sorted but only
+// well-voted, well-rated, recent titles — keeps the "trending" feel without
+// the scraped-catalog fillers. TV uses lower thresholds because shows
+// accumulate fewer votes than movies.
+const DISCOVER_MIN_RATING: Record<'movie' | 'tv', number> = { movie: 6.8, tv: 7.0 };
+const DISCOVER_MIN_VOTES: Record<'movie' | 'tv', number> = { movie: 1000, tv: 300 };
+const DISCOVER_FRESHNESS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+
+async function fetchDiscoverTmdb(
+  type: 'movie' | 'tv',
+  englishOnly: boolean,
+  page: number = 1,
+): Promise<MediaItem[]> {
+  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!tmdbKey) return [];
+  try {
+    const since = new Date(Date.now() - DISCOVER_FRESHNESS_MS).toISOString().slice(0, 10);
+    const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
+    const params = new URLSearchParams({
+      api_key: tmdbKey,
+      sort_by: 'popularity.desc',
+      page: String(page),
+      'vote_average.gte': String(DISCOVER_MIN_RATING[type]),
+      'vote_count.gte': String(DISCOVER_MIN_VOTES[type]),
+      [`${dateParam}.gte`]: since,
+    });
+    if (englishOnly) params.set('with_original_language', 'en');
+
+    const res = await fetch(
+      `https://api.themoviedb.org/3/discover/${type}?${params.toString()}`,
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results ?? []).slice(0, 20).map((it: any) => mapTmdbResult(it, type));
+  } catch (e) {
+    console.warn('TMDB discover failed:', e);
+    return [];
+  }
+}
+
 /** Map a TMDB search/trending/similar result into a MediaItem (numeric TMDB id). */
-function mapTmdbResult(it: any, type: 'movie' | 'tv'): MediaItem {
+export function mapTmdbResult(it: any, type: 'movie' | 'tv'): MediaItem {
   const id = String(it.id);
   return {
     id,

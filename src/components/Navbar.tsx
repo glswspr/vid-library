@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Film, Search } from 'lucide-react';
 import { SettingsMenu } from '../components/SettingsMenu';
+import { WatchStats } from '../components/WatchStats';
 
 export const FOCUS_SEARCH_EVENT = 'vdl:focus-search';
 
@@ -25,6 +26,8 @@ export const Navbar: FC = () => {
         </Link>
 
         <div className="flex items-center gap-2">
+          <WatchStats />
+
           {onHome ? (
             <button
               type="button"

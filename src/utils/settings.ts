@@ -1,9 +1,13 @@
 import type { ProviderId } from '../types';
+import { GENRE_ROWS_MAX } from '../constants';
 
 export interface AppSettings {
   defaultProvider: ProviderId;
   autoplayNext: boolean;
   accentColor: string;
+  englishOnly: boolean;
+  /** TMDB movie genre ids rendered as home-page rows. */
+  genreRows: number[];
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
@@ -11,7 +15,16 @@ const DEFAULTS: AppSettings = {
   defaultProvider: 'vidrock',
   autoplayNext: true,
   accentColor: '#06b6d4',
+  englishOnly: true,
+  genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
 };
+
+function sanitizeGenreRows(value: unknown): number[] {
+  if (!Array.isArray(value)) return DEFAULTS.genreRows;
+  return value
+    .filter((id): id is number => typeof id === 'number' && Number.isFinite(id) && id > 0)
+    .slice(0, GENRE_ROWS_MAX);
+}
 
 function readSettings(): AppSettings {
   try {
@@ -22,6 +35,8 @@ function readSettings(): AppSettings {
       defaultProvider: (parsed.defaultProvider && isValidProvider(parsed.defaultProvider)) ? parsed.defaultProvider : DEFAULTS.defaultProvider,
       autoplayNext: typeof parsed.autoplayNext === 'boolean' ? parsed.autoplayNext : DEFAULTS.autoplayNext,
       accentColor: typeof parsed.accentColor === 'string' ? parsed.accentColor : DEFAULTS.accentColor,
+      englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
+      genreRows: sanitizeGenreRows(parsed.genreRows),
     };
   } catch {
     return DEFAULTS;
