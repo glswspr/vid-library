@@ -1,17 +1,138 @@
-import type { FC } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Film, Search } from 'lucide-react';
+import type { FC, ChangeEvent, KeyboardEvent } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Film, Search, X, Loader2 } from 'lucide-react';
 import { SettingsMenu } from '../components/SettingsMenu';
 import { WatchStats } from '../components/WatchStats';
+import { SearchResults } from './SearchResults';
+import { searchByTitle } from '../services/catalog';
+import type { SearchResult } from '../services/catalog';
+import { SEARCH_DEBOUNCE_MS, MIN_SEARCH_QUERY_LENGTH } from '../constants';
 
 export const FOCUS_SEARCH_EVENT = 'vdl:focus-search';
 
 export const Navbar: FC = () => {
-  const { pathname } = useLocation();
-  const onHome = pathname === '/';
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const searchClasses =
-    'inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 border-2 border-slate-700 text-slate-200 font-bold text-sm hover:border-cyan-500 hover:text-white focus-visible:border-cyan-500 transition-colors cursor-pointer';
+  const [searchText, setSearchText] = useState<string>('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const performSearch = useCallback(async (query: string) => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+
+    if (query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
+      setResults([]);
+      setHasSearched(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setSelectedIndex(-1);
+
+    try {
+      const searchResults = await searchByTitle(query);
+      setResults(searchResults);
+    } catch {
+      setResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  const handleSearchInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchText(value);
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    debounceRef.current = setTimeout(() => {
+      performSearch(value);
+    }, SEARCH_DEBOUNCE_MS);
+  };
+
+  const handleClearSearch = () => {
+    setSearchText('');
+    setResults([]);
+    setHasSearched(false);
+    setSelectedIndex(-1);
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    searchInputRef.current?.focus();
+  };
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (results.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedIndex >= 0 && selectedIndex < results.length) {
+          const result = results[selectedIndex];
+          navigate(
+            result.type === 'movie'
+              ? `/movie/${result.imdbId}`
+              : `/tv/${result.imdbId}`
+          );
+        } else if (results.length === 1) {
+          const result = results[0];
+          navigate(
+            result.type === 'movie'
+              ? `/movie/${result.imdbId}`
+              : `/tv/${result.imdbId}`
+          );
+        }
+        break;
+      case 'Escape':
+        handleClearSearch();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    const handleFocusSearch = () => searchInputRef.current?.focus();
+    window.addEventListener(FOCUS_SEARCH_EVENT, handleFocusSearch);
+    return () => window.removeEventListener(FOCUS_SEARCH_EVENT, handleFocusSearch);
+  }, []);
+
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) {
+      setSearchText(q);
+      performSearch(q);
+    }
+  }, [searchParams, performSearch]);
+
+  useEffect(() => {
+    const debounce = debounceRef;
+    const abort = abortRef;
+    return () => {
+      if (debounce.current) clearTimeout(debounce.current);
+      if (abort.current) abort.current.abort();
+    };
+  }, []);
 
   return (
     <header className="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
@@ -27,28 +148,64 @@ export const Navbar: FC = () => {
 
         <div className="flex items-center gap-2">
           <WatchStats />
-
-          {onHome ? (
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new Event(FOCUS_SEARCH_EVENT))}
-              className={searchClasses}
-              aria-label="Search"
-            >
-              <Search className="w-5 h-5" />
-              <span>Search</span>
-            </button>
-          ) : (
-            <Link
-              to="/?focus=search"
-              className={searchClasses}
-              aria-label="Search"
-            >
-              <Search className="w-5 h-5" />
-              <span>Search</span>
-            </Link>
-          )}
-
+          
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4 text-slate-400" />
+              )}
+            </div>
+            
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchText}
+              onChange={handleSearchInput}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search..."
+              className="w-56 bg-slate-800 border-2 border-slate-700 focus:border-cyan-400 rounded-xl pl-10 pr-10 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
+              aria-label="Search movies and TV shows"
+            />
+            
+            {searchText && (
+              <button
+                onClick={handleClearSearch}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            
+            {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
+              <div className="absolute left-0 right-0 mt-2" id="search-results" role="listbox">
+                {results.length > 0 ? (
+                  <SearchResults
+                    results={results}
+                    onSelect={() => {
+                      setSearchText('');
+                      setResults([]);
+                      setHasSearched(false);
+                    }}
+                    selectedIndex={selectedIndex}
+                  />
+                ) : (
+                  <div className="px-4 py-2 text-center text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800/50">
+                    <p className="text-xs">No results for <span className="text-slate-300">"{searchText}"</span></p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {isSearching && (
+              <div className="absolute left-0 right-0 mt-2 px-4 py-2 text-center text-slate-400 bg-slate-900/30 rounded-xl border border-slate-800/30">
+                <Loader2 className="w-5 h-5 mx-auto mb-2 text-cyan-400 animate-spin" />
+              </div>
+            )}
+          </div>
+          
           <SettingsMenu />
         </div>
       </div>

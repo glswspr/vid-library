@@ -13,7 +13,7 @@ import {
 } from '../utils/storage';
 import { useSettings } from '../hooks/useSettings';
 import { getSettings } from '../utils/settings';
-import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star, Maximize, Minimize } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
 import { resolveImdbToTmdb } from '../utils/tv';
@@ -55,6 +55,53 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const [ended, setEnded] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
+  const [containerWidth, setContainerWidth] = useState<string>('100%');
+  const [containerHeight, setContainerHeight] = useState<string>('');
+
+  const IFRAME_ASPECT_RATIO = 16 / 9;
+
+  useEffect(() => {
+    const updateContainerSize = () => {
+      const outerEl = document.querySelector('[data-video-player-outer]');
+      const chromeEl = document.querySelector('[data-video-player-chrome]');
+      if (!outerEl || !chromeEl) {
+        const maxWidth = window.innerWidth - 96;
+        const maxHeight = window.innerHeight - 96;
+        let width: number;
+        let height: number;
+        if (maxWidth / maxHeight > IFRAME_ASPECT_RATIO) {
+          height = maxHeight;
+          width = height * IFRAME_ASPECT_RATIO;
+        } else {
+          width = maxWidth;
+          height = width / IFRAME_ASPECT_RATIO;
+        }
+        setContainerWidth(`${Math.round(width)}px`);
+        setContainerHeight(`${Math.round(height)}px`);
+        return;
+      }
+      const outerRect = outerEl.getBoundingClientRect();
+      const chromeRect = chromeEl.getBoundingClientRect();
+      const navbarHeight = 64;
+      const availableHeight = window.innerHeight - navbarHeight - outerRect.top + chromeRect.top;
+      const maxWidth = window.innerWidth - 48;
+      let width: number;
+      let height: number;
+      if (maxWidth / availableHeight > IFRAME_ASPECT_RATIO) {
+        height = availableHeight;
+        width = height * IFRAME_ASPECT_RATIO;
+      } else {
+        width = maxWidth;
+        height = width / IFRAME_ASPECT_RATIO;
+      }
+      setContainerWidth(`${Math.round(width)}px`);
+      setContainerHeight(`${Math.round(height)}px`);
+    };
+    updateContainerSize();
+    window.addEventListener('resize', updateContainerSize);
+    return () => window.removeEventListener('resize', updateContainerSize);
+  }, []);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const manualOverrideRef = useRef(false);
@@ -91,6 +138,15 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     } else {
       document.exitFullscreen().catch(() => {});
     }
+  }, []);
+
+  const handleScrollToVideo = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const navbarHeight = 64;
+    const targetY = window.scrollY + rect.top - (window.innerHeight - rect.height - navbarHeight) / 2 - navbarHeight;
+    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
   }, []);
 
   useEffect(() => {
@@ -304,8 +360,8 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   }, []);
 
   return (
-    <div className="w-full bg-slate-900 rounded-2xl border border-slate-800 p-3 sm:p-4 shadow-2xl">
-      <div className="flex items-center gap-3 mb-3">
+    <div data-video-player-outer className="w-full bg-slate-900 rounded-2xl border border-slate-800 p-3 sm:p-4 shadow-2xl">
+      <div data-video-player-chrome className="flex items-center gap-3 mb-3">
         <div>
           <h2 className="text-base sm:text-lg font-bold text-white line-clamp-1">
             {media.title}
@@ -368,6 +424,15 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
           {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
         </button>
 
+        <button
+          type="button"
+          onClick={handleScrollToVideo}
+          aria-label="Scroll to video"
+          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
+        >
+          <Crosshair className="w-5 h-5" />
+        </button>
+
         {menuOpen && (
           <div
             role="listbox"
@@ -405,7 +470,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
         )}
       </div>
 
-      <div ref={containerRef} onDoubleClick={toggleFullscreen} className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+      <div ref={containerRef} onDoubleClick={toggleFullscreen} data-video-player-inner className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-800 mx-auto" style={{ width: containerWidth, height: containerHeight }}>
         {hasError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-950/95 z-20">
             <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center mb-3 border border-rose-500/20">

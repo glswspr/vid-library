@@ -35,10 +35,17 @@
   }
 
   /* Smooth scrolling for arrow key navigation */
-  html {
-    scroll-behavior: smooth;
-    font-size: 17px; /* Slightly larger base for TV viewing distance */
-  }
+html {
+  scroll-behavior: smooth;
+  font-size: 17px; /* Slightly larger base for TV viewing distance */
+}
+
+/* ── IFRAME RESPONSIVE SCALING ───── */
+iframe {
+  max-width: 100%;
+  max-height: 100%;
+  display: block; /* Remove any inline spacing issues */
+}
 
   /* Remove hover-only opacity effects on TV (no mouse) */
   @media (hover: none) {
