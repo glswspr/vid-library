@@ -5,7 +5,8 @@ import {
   fetchSeasonEpisodes,
   fetchTmdbTVEpisodes,
 } from './embed2';
-import { resolveImdbTitle, resolveTmdbFromImdb } from './metadata';
+import { resolveImdbTitle, resolveTmdbFromImdb, fetchWikipediaEpisodeCounts, fetchWikipediaSeasonEpisodeDetails } from './metadata';
+import type { WikipediaEpisodeDetail } from './metadata';
 import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
 
 // Media details: 2embed primary, Wikidata + TMDB fallback
@@ -138,7 +139,13 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
     const seasonsWithData: Season[] = [];
     for (let s = 1; s <= allSeasonEpisodes.length; s++) {
       const episodes = allSeasonEpisodes[s - 1];
+      const tmdbSeason = tmdbSeasons?.find((ts) => ts.seasonNumber === s);
+
       if (episodes.length > 0) {
+        if (tmdbSeason && tmdbSeason.episodeCount > episodes.length) {
+          seasonsWithData.push(tmdbSeason);
+          continue;
+        }
         seasonsWithData.push({
           seasonNumber: s,
           episodeCount: episodes.length,
@@ -147,7 +154,6 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
         continue;
       }
 
-      const tmdbSeason = tmdbSeasons?.find((ts) => ts.seasonNumber === s);
       if (tmdbSeason) {
         seasonsWithData.push(tmdbSeason);
         continue;
@@ -190,6 +196,59 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
             overview: `Season ${s} Episode ${i + 1} of ${base.title}`,
           })),
         });
+      }
+    }
+
+    // Wikipedia per-season episode counts — authoritative when both 2embed and
+    // TMDB undercount (e.g. Friends S7 = 24 while both APIs report 23 because
+    // the double-length finale is counted as one entry).
+    const wikiCounts = await Promise.race([
+      fetchWikipediaEpisodeCounts(imdbId),
+      new Promise<Map<number, number> | null>((r) => setTimeout(() => r(null), 8000)),
+    ]).catch(() => null);
+
+    if (wikiCounts) {
+      const paddedSeasons: number[] = [];
+      for (const season of seasonsWithData) {
+        const wikiCount = wikiCounts.get(season.seasonNumber);
+        if (wikiCount && wikiCount > season.episodes.length) {
+          paddedSeasons.push(season.seasonNumber);
+          for (let i = season.episodes.length; i < wikiCount; i++) {
+            season.episodes.push({
+              seasonNumber: season.seasonNumber,
+              episodeNumber: i + 1,
+              title: `Episode ${i + 1}`,
+            });
+          }
+          season.episodeCount = wikiCount;
+        }
+      }
+
+      // Enrich padded episodes with real titles and descriptions from the
+      // Wikipedia season page (e.g. Friends S7 ep 24 = "The One with Monica
+      // and Chandler's Wedding" with a plot summary).
+      for (const seasonNum of paddedSeasons) {
+        const season = seasonsWithData.find((s) => s.seasonNumber === seasonNum);
+        if (!season) continue;
+        const wikiDetails = await Promise.race([
+          fetchWikipediaSeasonEpisodeDetails(imdbId, seasonNum),
+          new Promise<Map<number, WikipediaEpisodeDetail> | null>((r) => setTimeout(() => r(null), 8000)),
+        ]).catch(() => null);
+        if (!wikiDetails) continue;
+
+        for (const ep of season.episodes) {
+          const detail = wikiDetails.get(ep.episodeNumber);
+          if (detail) {
+            // Replace placeholder titles (e.g. "Episode 24") with the real
+            // Wikipedia title; preserve existing TMDB/2embed titles.
+            if (detail.title && ep.title.startsWith('Episode ')) {
+              ep.title = detail.title;
+            }
+            if (detail.summary && !ep.overview) {
+              ep.overview = detail.summary;
+            }
+          }
+        }
       }
     }
 

@@ -8,6 +8,8 @@ export interface AppSettings {
   englishOnly: boolean;
   /** TMDB movie genre ids rendered as home-page rows. */
   genreRows: number[];
+  /** Ordered list of preferred provider IDs (high to low priority). If empty, uses default fallback order. */
+  preferredProviders: ProviderId[];
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
@@ -17,7 +19,16 @@ const DEFAULTS: AppSettings = {
   accentColor: '#06b6d4',
   englishOnly: true,
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
+  preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'],
 };
+
+function isValidProvider(value: unknown): ProviderId | null {
+  if (typeof value !== 'string') return null;
+  if (['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'].includes(value)) {
+    return value as ProviderId;
+  }
+  return null;
+}
 
 function sanitizeGenreRows(value: unknown): number[] {
   if (!Array.isArray(value)) return DEFAULTS.genreRows;
@@ -32,19 +43,16 @@ function readSettings(): AppSettings {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return {
-      defaultProvider: (parsed.defaultProvider && isValidProvider(parsed.defaultProvider)) ? parsed.defaultProvider : DEFAULTS.defaultProvider,
+      defaultProvider: isValidProvider(parsed.defaultProvider) ?? DEFAULTS.defaultProvider,
       autoplayNext: typeof parsed.autoplayNext === 'boolean' ? parsed.autoplayNext : DEFAULTS.autoplayNext,
       accentColor: typeof parsed.accentColor === 'string' ? parsed.accentColor : DEFAULTS.accentColor,
       englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
       genreRows: sanitizeGenreRows(parsed.genreRows),
+      preferredProviders: Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders.filter(isValidProvider) : DEFAULTS.preferredProviders,
     };
   } catch {
     return DEFAULTS;
   }
-}
-
-function isValidProvider(value: unknown): value is ProviderId {
-  return typeof value === 'string' && ['vidrock','vidapi','videasy','peachify','vidsrc','vidcore','vidzee'].includes(value);
 }
 
 function writeSettings(value: AppSettings): void {

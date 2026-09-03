@@ -6,6 +6,7 @@ import { SettingsMenu } from '../components/SettingsMenu';
 import { WatchStats } from '../components/WatchStats';
 import { SearchResults } from './SearchResults';
 import { searchByTitle } from '../services/catalog';
+import { resolveDirectImdbId, resolveImdbTitle, resolveTmdbFromImdb, detectMediaType } from '../services/metadata';
 import type { SearchResult } from '../services/catalog';
 import { SEARCH_DEBOUNCE_MS, MIN_SEARCH_QUERY_LENGTH } from '../constants';
 
@@ -42,8 +43,51 @@ export const Navbar: FC = () => {
     setSelectedIndex(-1);
 
     try {
-      const searchResults = await searchByTitle(query);
-      setResults(searchResults);
+      const imdbId = resolveDirectImdbId(query)?.imdbId;
+      if (imdbId) {
+        console.debug('[Navbar] Processing IMDB ID:', imdbId);
+
+        // Try Wikidata first for rich metadata (title, year, seasonsCount)
+        const wikidataResult = await resolveImdbTitle(imdbId);
+        console.debug('[Navbar] Wikidata result:', wikidataResult);
+
+        // Determine type using multiple fallbacks:
+        // 1. Wikidata seasonsCount if available
+        // 2. TMDB detection if available
+        // 3. Default to 'movie' if undetermined
+        let resolvedType: 'movie' | 'tv' = 'movie';
+        if (wikidataResult?.seasonsCount !== undefined) {
+          resolvedType = wikidataResult.seasonsCount > 0 ? 'tv' : 'movie';
+          console.debug('[Navbar] Using Wikidata seasonsCount:', resolvedType);
+        } else {
+          try {
+            const tmdbType = await detectMediaType(imdbId);
+            if (tmdbType === 'movie' || tmdbType === 'tv') {
+              resolvedType = tmdbType;
+              console.debug('[Navbar] Using TMDB detection:', resolvedType);
+            }
+          } catch (e) {
+            console.debug('[Navbar] TMDB detection error:', e);
+          }
+        }
+        console.debug('[Navbar] Final resolvedType:', resolvedType);
+
+        // Get poster from TMDB using the determined type
+        const tmdbResolved = await resolveTmdbFromImdb(imdbId, resolvedType);
+        const result: SearchResult = {
+          imdbId,
+          title: wikidataResult?.title || imdbId.toUpperCase(),
+          year: wikidataResult?.year,
+          type: resolvedType,
+          posterUrl: tmdbResolved?.posterPath
+            ? `https://image.tmdb.org/t/p/w92${tmdbResolved.posterPath}`
+            : undefined,
+        };
+        setResults([result]);
+      } else {
+        const searchResults = await searchByTitle(query);
+        setResults(searchResults);
+      }
     } catch {
       setResults([]);
     } finally {

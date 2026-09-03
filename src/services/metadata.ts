@@ -122,6 +122,37 @@ const tmdbIdCache = new Map<string, { value: TmdbResolved | null; at: number }>(
 const TMDB_ID_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 /**
+ * Detect whether an IMDb ID corresponds to a movie or a TV show, using
+ * TMDB's find endpoint which returns separate movie/tv result buckets.
+ * Returns null if TMDB can't determine the type.
+ */
+export async function detectMediaType(
+  imdbId: string,
+): Promise<'movie' | 'tv' | null> {
+  const keys = TMDB_API_KEY
+    ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
+    : [FALLBACK_TMDB_API_KEY];
+
+  for (const key of keys) {
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${key}&external_source=imdb_id`,
+      );
+      if (!res.ok) continue;
+      const data: TmdbFindResult = await res.json();
+      const hasMovie = (data.movie_results?.length ?? 0) > 0;
+      const hasTv = (data.tv_results?.length ?? 0) > 0;
+      if (hasMovie && !hasTv) return 'movie';
+      if (hasTv && !hasMovie) return 'tv';
+      if (hasTv && hasMovie) return 'tv';
+    } catch (e) {
+      console.warn(`TMDB type detect failed for ${imdbId}:`, e);
+    }
+  }
+  return null;
+}
+
+/**
  * Resolve a TMDB numeric ID from an IMDb ID using TMDB's find API.
  * Prefers the app's own VITE_TMDB_API_KEY, falling back to VidRock's
  * public key. Returns null if unresolvable.
@@ -162,6 +193,234 @@ export async function resolveTmdbFromImdb(
   }
   tmdbIdCache.set(cacheKey, { value: null, at: Date.now() });
   return null;
+}
+
+/**
+ * Fetch authoritative per-season episode counts from Wikipedia.
+ *
+ * Resolves IMDb ID → Wikidata QID → enwiki sitelink, then parses the
+ * "List of {title} episodes" page's `{{Series overview}}` template for
+ * `|episodesN = NN` fields. This is the only source that correctly counts
+ * double-length finale episodes as two entries (e.g. Friends S7 = 24 while
+ * both 2embed and TMDB report 23).
+ *
+ * Returns a Map of season number → episode count, or null if unavailable.
+ */
+export async function fetchWikipediaEpisodeCounts(
+  imdbId: string,
+): Promise<Map<number, number> | null> {
+  try {
+    // Step 1: resolve IMDb → QID viaWikidata search by IMDb property
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${encodeURIComponent(imdbId)}&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const pages = searchData?.query?.search || [];
+    if (pages.length === 0) return null;
+    const qid = pages[0].title;
+
+    // Step 2: get enwiki sitelink title for the main article
+    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}&props=sitelinks&languages=en&format=json&origin=*`;
+    const claimsRes = await fetch(claimsUrl);
+    if (!claimsRes.ok) return null;
+    const claimsData = await claimsRes.json();
+    const entity = claimsData?.entities?.[qid];
+    const enwikiTitle = entity?.sitelinks?.enwiki?.title;
+    if (!enwikiTitle) return null;
+
+    // Step 3: fetch the "List of {title} episodes" page wikitext
+    const listPageTitle = `List of ${enwikiTitle} episodes`;
+    const wpUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(listPageTitle)}&prop=wikitext&format=json&origin=*`;
+    const wpRes = await fetch(wpUrl);
+    if (!wpRes.ok) return null;
+    const wpData = await wpRes.json();
+    const wikitext: string = wpData?.parse?.wikitext?.['*'] || '';
+
+    // Step 4: parse |episodesN = NN from the Series overview template
+    const counts = new Map<number, number>();
+    const regex = /\| *episodes *(\d+) *= *(\d+)/gi;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(wikitext)) !== null) {
+      const season = parseInt(match[1], 10);
+      const count = parseInt(match[2], 10);
+      if (season > 0 && count > 0) {
+        counts.set(season, count);
+      }
+    }
+
+    // Fallback: try |num_episodesN = NN pattern (used by some list pages)
+    if (counts.size === 0) {
+      const regex2 = /\| *num_episodes *(\d+) *= *(\d+)/gi;
+      while ((match = regex2.exec(wikitext)) !== null) {
+        const season = parseInt(match[1], 10);
+        const count = parseInt(match[2], 10);
+        if (season > 0 && count > 0) {
+          counts.set(season, count);
+        }
+      }
+    }
+
+    return counts.size > 0 ? counts : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface WikipediaEpisodeDetail {
+  episodeNumber: number;
+  title: string;
+  summary?: string;
+}
+
+/**
+ * Resolve an IMDb ID to the enwiki article title via Wikidata.
+ * Cached at module level to avoid redundant lookups when fetching per-season
+ * episode details for multiple seasons of the same show.
+ */
+const enwikiTitleCache = new Map<string, { value: string | null; at: number }>();
+const ENWIKI_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
+async function resolveEnwikiTitle(imdbId: string): Promise<string | null> {
+  const cached = enwikiTitleCache.get(imdbId);
+  if (cached && Date.now() - cached.at < ENWIKI_CACHE_TTL) return cached.value;
+
+  try {
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${encodeURIComponent(imdbId)}&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const pages = searchData?.query?.search || [];
+    if (pages.length === 0) return null;
+    const qid = pages[0].title;
+
+    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}&props=sitelinks&languages=en&format=json&origin=*`;
+    const claimsRes = await fetch(claimsUrl);
+    if (!claimsRes.ok) return null;
+    const claimsData = await claimsRes.json();
+    const enwikiTitle = claimsData?.entities?.[qid]?.sitelinks?.enwiki?.title || null;
+    enwikiTitleCache.set(imdbId, { value: enwikiTitle, at: Date.now() });
+    return enwikiTitle;
+  } catch {
+    enwikiTitleCache.set(imdbId, { value: null, at: Date.now() });
+    return null;
+  }
+}
+
+/**
+ * Extract a balanced template invocation from wikitext starting at the given
+ * search index (which points to the `{{` of the template).
+ * Returns {content, endIndex} where content is the text between `{{TemplateName`
+ * and the matching `}}`, or null if unbalanced.
+ */
+function extractTemplateBlock(wikitext: string, startIdx: number): { content: string; endIndex: number } | null {
+  let depth = 1;
+  let i = startIdx + 2;
+  while (depth > 0 && i < wikitext.length) {
+    if (wikitext[i] === '{' && wikitext[i + 1] === '{') {
+      depth++;
+      i += 2;
+    } else if (wikitext[i] === '}' && wikitext[i + 1] === '}') {
+      depth--;
+      if (depth === 0) return { content: wikitext.slice(startIdx + 2, i), endIndex: i + 2 };
+      i += 2;
+    } else {
+      i++;
+    }
+  }
+  return null;
+}
+
+/**
+ * Parse a parameter value from a wikitext template content string.
+ * Only matches `|` at the start of a line to avoid matching parameters
+ * inside nested templates like `{{cite web|title=...}}`.
+ */
+function parseTemplateField(content: string, fieldName: string): string | undefined {
+  const regex = new RegExp(`(?:^|\\n)\\|\\s*${fieldName}\\s*=([\\s\\S]*?)(?=\\n\\||\\n\\}\\})`, 'i');
+  const match = regex.exec(content);
+  return match ? match[1].trim() : undefined;
+}
+
+/**
+ * Fetch per-episode details (title + summary) from the Wikipedia season page.
+ * The season page title follows the pattern "{enwikiTitle} season {N}", e.g.
+ * "Friends season 7". Episode data comes from `{{Episode list}}` and
+ * `{{Episode list/sublist}}` (multi-part) template invocations.
+ *
+ * Returns a Map of season episode number → {title, summary}, or null.
+ */
+export async function fetchWikipediaSeasonEpisodeDetails(
+  imdbId: string,
+  seasonNumber: number,
+): Promise<Map<number, WikipediaEpisodeDetail> | null> {
+  try {
+    const enwikiTitle = await resolveEnwikiTitle(imdbId);
+    if (!enwikiTitle) return null;
+
+    const seasonPageTitle = `${enwikiTitle} season ${seasonNumber}`;
+    const wpUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(seasonPageTitle)}&prop=wikitext&format=json&origin=*`;
+    const wpRes = await fetch(wpUrl);
+    if (!wpRes.ok) return null;
+    const wpData = await wpRes.json();
+    const wikitext: string = wpData?.parse?.wikitext?.['*'] || '';
+    if (!wikitext) return null;
+
+    const episodes = new Map<number, WikipediaEpisodeDetail>();
+    const marker = '{{Episode list';
+    let idx = 0;
+
+    while (true) {
+      const startIdx = wikitext.indexOf(marker, idx);
+      if (startIdx === -1) break;
+
+      const block = extractTemplateBlock(wikitext, startIdx);
+      if (!block) {
+        idx = startIdx + 1;
+        continue;
+      }
+      idx = block.endIndex;
+      const content = block.content;
+
+      const title = parseTemplateField(content, 'Title') || '';
+      const summary = parseTemplateField(content, 'ShortSummary');
+      const cleanedTitle = title.replace(/\[+|\]/g, '').replace(/''|''/g, '');
+
+      if (!cleanedTitle) continue;
+
+      // Single-part episode: |EpisodeNumber2 = N
+      const singleNum = parseTemplateField(content, 'EpisodeNumber2');
+      if (singleNum) {
+        const epNum = parseInt(singleNum, 10);
+        if (!isNaN(epNum) && epNum > 0) {
+          episodes.set(epNum, {
+            episodeNumber: epNum,
+            title: cleanedTitle,
+            summary,
+          });
+        }
+        continue;
+      }
+
+      // Multi-part episode: |EpisodeNumber2_1 = N, |EpisodeNumber2_2 = M
+      for (let part = 1; part <= 5; part++) {
+        const field = parseTemplateField(content, `EpisodeNumber2_${part}`);
+        if (field) {
+          const epNum = parseInt(field, 10);
+          if (!isNaN(epNum) && epNum > 0) {
+            episodes.set(epNum, {
+              episodeNumber: epNum,
+              title: cleanedTitle,
+              summary,
+            });
+          }
+        }
+      }
+    }
+
+    return episodes.size > 0 ? episodes : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Best-effort poster URL for an IMDb ID (CORS-friendly TMDB lookup). */

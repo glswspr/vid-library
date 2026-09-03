@@ -93,6 +93,37 @@ export const SettingsMenu: FC = () => {
             </select>
           </label>
 
+          <label className="block mb-3">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Preferred servers</span>
+            <p className="text-[11px] text-slate-500 mt-1 mb-2">
+              Pick servers in order of preference (highest priority first).
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+              {Object.entries(PROVIDERS).map(([id, p]) => {
+                const checked = settings.preferredProviders.includes(id as ProviderId);
+                return (
+                  <label
+                    key={id}
+                    className="flex items-center gap-2 text-sm rounded px-1 py-0.5 cursor-pointer hover:bg-slate-800/60"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...settings.preferredProviders, id as ProviderId]
+                          : settings.preferredProviders.filter((pid) => pid !== id);
+                        update({ preferredProviders: next });
+                      }}
+                      className="w-4 h-4 shrink-0 accent-cyan-500 cursor-pointer"
+                    />
+                    <span className="text-slate-300 line-clamp-1">{p.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </label>
+
           <label className="flex items-center justify-between mb-1 cursor-pointer">
             <span className="text-sm text-slate-300 font-medium">Autoplay next episode</span>
             <input

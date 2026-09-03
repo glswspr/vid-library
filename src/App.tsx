@@ -10,6 +10,7 @@ import { Navbar } from './components/Navbar';
 import { useSpatialNav } from './hooks/useSpatialNav';
 import { useSettings } from './hooks/useSettings';
 import { OfflineBanner } from './components/OfflineBanner';
+import { scrollToVideoPlayer } from './utils/scroll';
 
 function AccentApplier() {
   const [settings] = useSettings();
@@ -31,9 +32,12 @@ function ScrollManager() {
         window.scrollTo(0, saved ? Number(saved) : 0);
       });
     } else if (isSameShowEpisode(prevPathname.current, pathname)) {
-      const saved = sessionStorage.getItem(`scroll:${pathname}`);
+      // User clicked an episode thumbnail within the same show.
+      // Scroll to the video player (centered) — same as the
+      // "Scroll To Video" button — instead of restoring a stale
+      // saved scroll position.
       requestAnimationFrame(() => {
-        window.scrollTo(0, saved ? Number(saved) : 0);
+        scrollToVideoPlayer();
       });
     } else {
       window.scrollTo(0, 0);

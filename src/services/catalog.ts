@@ -23,8 +23,12 @@ export {
   resolveDirectImdbId,
   resolveImdbTitle,
   resolveTmdbFromImdb,
+  detectMediaType,
   resolvePosterUrl,
+  fetchWikipediaEpisodeCounts,
+  fetchWikipediaSeasonEpisodeDetails,
 } from './metadata';
-export type { TmdbResolved } from './metadata';
+
+export { WikipediaEpisodeDetail } from './metadata';
 
 export { getMediaDetails, getTVShowDetails } from './details';

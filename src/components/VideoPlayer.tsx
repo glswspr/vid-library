@@ -17,6 +17,7 @@ import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star,
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
 import { resolveImdbToTmdb } from '../utils/tv';
+import { scrollToElement } from '../utils/scroll';
 import ServerStatusDot from './ServerStatusDot';
 import EndOfContentOverlay from './EndOfContentOverlay';
 
@@ -143,10 +144,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const handleScrollToVideo = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const navbarHeight = 64;
-    const targetY = window.scrollY + rect.top - (window.innerHeight - rect.height - navbarHeight) / 2 - navbarHeight;
-    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+    scrollToElement(el);
   }, []);
 
   useEffect(() => {
