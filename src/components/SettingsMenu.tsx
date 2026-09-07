@@ -66,9 +66,9 @@ export const SettingsMenu: FC = () => {
         <div
           role="menu"
           aria-label="Settings"
-          className="absolute right-0 top-full mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 z-50"
+          className="absolute right-0 top-full mt-2 w-72 max-h-[80vh] flex flex-col bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50"
         >
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
             <h3 className="text-sm font-bold text-white">Settings</h3>
             <button
               type="button"
@@ -80,6 +80,39 @@ export const SettingsMenu: FC = () => {
             </button>
           </div>
 
+          <div className="px-4 pb-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-300 font-medium">Theme</span>
+              <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => update({ theme: 'dark' })}
+                  aria-pressed={settings.theme === 'dark'}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    settings.theme === 'dark'
+                      ? 'bg-cyan-500 text-slate-900'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Dark
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update({ theme: 'light' })}
+                  aria-pressed={settings.theme === 'light'}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    settings.theme === 'light'
+                      ? 'bg-cyan-500 text-slate-900'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Light
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-y-auto px-4 pb-4">
           <label className="block mb-3">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Default server</span>
             <select
@@ -201,6 +234,7 @@ export const SettingsMenu: FC = () => {
           >
             <Trash2 className="w-4 h-4" /> Clear watch history
           </button>
+          </div>
         </div>
       )}
     </div>

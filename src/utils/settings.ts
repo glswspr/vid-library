@@ -10,6 +10,8 @@ export interface AppSettings {
   genreRows: number[];
   /** Ordered list of preferred provider IDs (high to low priority). If empty, uses default fallback order. */
   preferredProviders: ProviderId[];
+  /** UI color scheme. */
+  theme: 'dark' | 'light';
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
@@ -20,6 +22,7 @@ const DEFAULTS: AppSettings = {
   englishOnly: true,
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
   preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'],
+  theme: 'dark',
 };
 
 function isValidProvider(value: unknown): ProviderId | null {
@@ -37,6 +40,10 @@ function sanitizeGenreRows(value: unknown): number[] {
     .slice(0, GENRE_ROWS_MAX);
 }
 
+function isValidTheme(value: unknown): 'dark' | 'light' | null {
+  return value === 'light' || value === 'dark' ? value : null;
+}
+
 function readSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -49,6 +56,7 @@ function readSettings(): AppSettings {
       englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
       genreRows: sanitizeGenreRows(parsed.genreRows),
       preferredProviders: Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders.filter(isValidProvider) : DEFAULTS.preferredProviders,
+      theme: isValidTheme(parsed.theme) ?? DEFAULTS.theme,
     };
   } catch {
     return DEFAULTS;

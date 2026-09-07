@@ -14,16 +14,49 @@
     border-radius: 4px;
   }
 
-  /* Softer ring for already-rounded elements */
-  button:focus-visible,
-  a:focus-visible,
-  [role="button"]:focus-visible,
-  [role="option"]:focus-visible,
-  select:focus-visible {
-    outline: 3px solid #06b6d4 !important;
-    outline-offset: 2px !important;
-    border-radius: 8px;
-  }
+   /* Softer ring for already-rounded elements */
+   button:focus-visible,
+   a:focus-visible,
+   [role="button"]:focus-visible,
+   [role="option"]:focus-visible,
+   select:focus-visible {
+     outline: 3px solid #06b6d4 !important;
+     outline-offset: 2px !important;
+     border-radius: 8px;
+   }
+
+   /* Light theme overrides — invert the color palette by overriding Tailwind's
+      CSS color variables. Since all utility classes reference var(--color-*),
+      changing the variables here instantly recolors the entire UI when the
+      `light` class is on <html>. The `html.light` selector (class + element)
+      has higher specificity than `:root` (pseudo-class only), so it wins. */
+   html.light {
+     color-scheme: light;
+   }
+
+   html.light {
+     --color-slate-950: #f8fafc;
+     --color-slate-900: #f1f5f9;
+     --color-slate-800: #e2e8f0;
+     --color-slate-700: #cbd5e1;
+     --color-slate-600: #94a3b8;
+     --color-slate-500: #64748b;
+     --color-slate-400: #94a3b8;
+     --color-slate-300: #64748b;
+     --color-slate-200: #475569;
+     --color-slate-100: #334157;
+     --color-white: #0f172a;
+     --color-black: #ffffff;
+     --color-cyan-300: #0891b2;
+     --color-cyan-400: #06b6d4;
+     --color-cyan-500: #06b6d4;
+   }
+
+   html.light body {
+     background-color: #ffffff;
+     color: #1e293b;
+   }
+
 
   /* Inputs — bright cyan glow */
   input:focus-visible,

@@ -20,6 +20,19 @@ function AccentApplier() {
   return null;
 }
 
+function ThemeApplier() {
+  const [settings] = useSettings();
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.theme === 'light') {
+      root.classList.add('light');
+    } else {
+      root.classList.remove('light');
+    }
+  }, [settings.theme]);
+  return null;
+}
+
 function ScrollManager() {
   const { pathname } = useLocation();
   const navigationType = useNavigationType();
@@ -66,7 +79,8 @@ export const App: FC = () => {
   return (
     <Router>
       <ScrollManager />
-      <AccentApplier />
+       <AccentApplier />
+       <ThemeApplier />
       <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-cyan-500 selection:text-slate-950">
       <Navbar />
       <ErrorBoundary>

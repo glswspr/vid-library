@@ -241,7 +241,7 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
           if (detail) {
             // Replace placeholder titles (e.g. "Episode 24") with the real
             // Wikipedia title; preserve existing TMDB/2embed titles.
-            if (detail.title && ep.title.startsWith('Episode ')) {
+            if (detail.title && ep.title?.startsWith('Episode ')) {
               ep.title = detail.title;
             }
             if (detail.summary && !ep.overview) {

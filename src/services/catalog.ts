@@ -29,6 +29,6 @@ export {
   fetchWikipediaSeasonEpisodeDetails,
 } from './metadata';
 
-export { WikipediaEpisodeDetail } from './metadata';
+export type { WikipediaEpisodeDetail } from './metadata';
 
 export { getMediaDetails, getTVShowDetails } from './details';
