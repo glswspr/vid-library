@@ -370,6 +370,26 @@ export const ContinueWatching: FC = () => {
                         </div>
                       </div>
 
+                      <button
+                        type="button"
+                        onClick={handleRemove}
+                        aria-label={`Remove ${item.title} from Continue Watching`}
+                        className="
+                          absolute top-1.5 right-1.5 z-20
+                          flex items-center justify-center
+                          w-7 h-7 rounded-lg
+                          bg-black/70 border border-white/30
+                          text-white
+                          opacity-0 group-hover:opacity-100
+                          hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
+                          backdrop-blur-md
+                          transition-all duration-200 cursor-pointer
+                          shadow-lg shadow-black/40
+                        "
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+
                       <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-cyan-500/20 border border-cyan-500/40 rounded text-[9px] font-semibold text-cyan-300 uppercase tracking-wider">
                         Next
                       </div>
