@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -11,7 +12,10 @@
     "deploy:vercel": "curl -X POST \"https://api.vercel.com/v1/integrations/deploy/prj_m5NddXkFeGaiiaXv74Ro9KZVRQzz/39iL911coC\"",
     "deploy:surge": "npx surge dist v1d.surge.sh",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "electron .",
+    "desktop:dev": "electron . --dev-server=http://localhost:5173",
+    "desktop:test": "electron . --self-test"
   },
   "dependencies": {
     "lucide-react": "^1.30.0",
@@ -25,6 +29,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "electron": "^44.4.5",
     "oxlint": "^1.75.0",
     "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",

@@ -12,13 +12,12 @@ import {
   recordServerFailure,
 } from '../utils/storage';
 import { useSettings } from '../hooks/useSettings';
-import { getSettings } from '../utils/settings';
-import { AlertTriangle, RefreshCw, ChevronDown, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair } from 'lucide-react';
+import { resolveDefaultProvider } from '../utils/settings';
+import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
 import { resolveImdbToTmdb } from '../utils/tv';
 import { scrollToElement } from '../utils/scroll';
-import ServerStatusDot from './ServerStatusDot';
 import EndOfContentOverlay from './EndOfContentOverlay';
 
 interface VideoPlayerProps {
@@ -36,6 +35,9 @@ const SERVER_BUTTONS: readonly { label: string; provider: ProviderId }[] = [
   { label: 'Server 5', provider: 'vidsrc' },
   { label: 'Server 6', provider: 'vidcore' },
   { label: 'Server 7', provider: 'vidzee' },
+  { label: 'Server 8', provider: 'mapple' },
+  { label: 'Server 9', provider: 'm111' },
+  { label: 'Server 10', provider: 'streamx' },
 ];
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
@@ -46,11 +48,27 @@ const PROVIDER_NAMES: Record<ProviderId, string> = {
   vidsrc: 'VidSrc',
   vidcore: 'VidCore',
   vidzee: 'VidZee',
+  mapple: 'Mapple',
+  m111: '111Movies',
+  streamx: 'StreamX',
 };
+
+/**
+ * Providers whose upstream players only accept numeric TMDB IDs. IMDB IDs
+ * (tt1234567) must be converted via the TMDB API before building the embed URL.
+ */
+const TMDB_ID_PROVIDERS: readonly ProviderId[] = [
+  'peachify',
+  'videasy',
+  'vidzee',
+  'mapple',
+  'm111',
+  'streamx',
+];
 
 export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAutoNext }) => {
   const [settings] = useSettings();
-  const [providerId, setProviderId] = useState<ProviderId>(() => getSettings().defaultProvider);
+  const [providerId, setProviderId] = useState<ProviderId>(() => resolveDefaultProvider(media.id));
   const [hasError, setHasError] = useState<boolean>(false);
   const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
   const [ended, setEnded] = useState<boolean>(false);
@@ -107,8 +125,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const containerRef = useRef<HTMLDivElement>(null);
   const manualOverrideRef = useRef(false);
   const autoFallbackCountRef = useRef(0);
-  const [menuOpen, setMenuOpen] = useState<boolean>(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const currentServer =
     SERVER_BUTTONS.find((b) => b.provider === providerId) ?? SERVER_BUTTONS[0];
 
@@ -118,7 +134,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     setEnded(false);
     autoFallbackCountRef.current = 0;
     if (!manualOverrideRef.current) {
-      setProviderId(getSettings().defaultProvider);
+      setProviderId(resolveDefaultProvider(media.id));
     }
   }, [media.id, media.tmdbId, season, episode]);
 
@@ -169,30 +185,11 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('touchstart', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('touchstart', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [menuOpen]);
-
   const cycleServer = (dir: 1 | -1) => {
     const idx = SERVER_BUTTONS.findIndex((b) => b.provider === providerId);
     const next = SERVER_BUTTONS[(idx + dir + SERVER_BUTTONS.length) % SERVER_BUTTONS.length];
     autoFallbackCountRef.current = 0;
     handleProviderChange(next.provider);
-    setMenuOpen(false);
   };
 
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -291,15 +288,11 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   // First: resolve IMDB to TMDB asynchronously when needed
   useEffect(() => {
     let cancelled = false;
-    // For providers that require numeric TMDB IDs (peachify, videasy, vidzee),
-    // resolve IMDB ID to TMDB ID if we only have an IMDB ID.
-    // This prevents "PDF file not found" errors caused by passing IMDB IDs
-    // (tt1234567) to servers that expect numeric TMDB IDs.
-    if (
-      providerId === 'peachify' ||
-      providerId === 'videasy' ||
-      providerId === 'vidzee'
-    ) {
+    // For providers that require numeric TMDB IDs, resolve IMDB ID to TMDB ID
+    // if we only have an IMDB ID. This prevents "PDF file not found" errors
+    // caused by passing IMDB IDs (tt1234567) to servers that expect numeric
+    // TMDB IDs.
+    if (TMDB_ID_PROVIDERS.includes(providerId)) {
       if (media.imdbId && !media.tmdbId && !resolvedTmdbId) {
         ;(async () => {
           const tmdbId = await resolveImdbToTmdb(media.imdbId as string);
@@ -319,11 +312,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     //   otherwise fall back to TMDB ID or IMDB ID or raw ID
     // - For other providers: use imdbId || tmdbId || id as before
     let embedId: string;
-    if (
-      providerId === 'peachify' ||
-      providerId === 'videasy' ||
-      providerId === 'vidzee'
-    ) {
+    if (TMDB_ID_PROVIDERS.includes(providerId)) {
       embedId = resolvedTmdbId || media.tmdbId || media.imdbId || media.id;
     } else {
       embedId = media.imdbId || media.tmdbId || media.id;
@@ -381,8 +370,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
           </div>
         </div>
       </div>
-
-      <div className="relative flex items-center gap-1.5 mb-3" ref={menuRef}>
+      <div className="relative flex items-center gap-1.5 mb-3">
         <button
           type="button"
           onClick={() => cycleServer(-1)}
@@ -392,17 +380,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <button
-          type="button"
-          onClick={() => { autoFallbackCountRef.current = 0; setMenuOpen((o) => !o); }}
-          aria-haspopup="listbox"
-          aria-expanded={menuOpen}
-          className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:text-white hover:border-slate-600 font-bold text-sm cursor-pointer"
-        >
+        <div className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-bold text-sm">
           <span>{currentServer.label}</span>
           <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[currentServer.provider]}</span>
-          <ChevronDown className={`w-4 h-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
-        </button>
+        </div>
 
         <button
           type="button"
@@ -430,42 +411,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
         >
           <Crosshair className="w-5 h-5" />
         </button>
-
-        {menuOpen && (
-          <div
-            role="listbox"
-            aria-label="Choose video server"
-            className="absolute left-0 right-0 top-full z-30 mt-2 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5"
-          >
-            {SERVER_BUTTONS.map((btn) => {
-              const isActive = providerId === btn.provider;
-              return (
-                <button
-                  key={btn.provider}
-                  role="option"
-                  aria-selected={isActive}
-                  type="button"
-                  onClick={() => {
-                    autoFallbackCountRef.current = 0;
-                    handleProviderChange(btn.provider);
-                    setMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold text-left cursor-pointer ${
-                    isActive
-                      ? 'bg-cyan-500/20 text-cyan-300'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <ServerStatusDot provider={btn.provider} />
-                    {btn.label}
-                  </span>
-                  <span className="text-xs text-slate-500">{PROVIDER_NAMES[btn.provider]}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       <div ref={containerRef} onDoubleClick={toggleFullscreen} data-video-player-inner className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-800 mx-auto" style={{ width: containerWidth, height: containerHeight }}>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import type { WatchProgress, TVShowDetails, Episode } from '../types';
-import { getAllWatchProgress, updateProgressPoster, updateProgressRating, updateProgressGenreForShow, removeWatchProgress } from '../utils/storage';
+import { getAllWatchProgress, updateProgressPoster, updateProgressRating, updateProgressGenreForShow, removeShowWatchProgress } from '../utils/storage';
 import { getPosterUrl, getRatingUrl, getGenre } from '../utils/posters';
 import { getTVShowDetails } from '../services/catalog';
 import { Play, Clock, ChevronLeft, ChevronRight, X } from 'lucide-react';
@@ -256,12 +256,11 @@ export const ContinueWatching: FC = () => {
             const handleRemove = (e: React.MouseEvent) => {
               e.preventDefault();
               e.stopPropagation();
-              removeWatchProgress(item.id, item.seasonNumber, item.episodeNumber);
-              setItems((prev) => prev.filter((i) => !(
-                i.id === item.id &&
-                i.seasonNumber === item.seasonNumber &&
-                i.episodeNumber === item.episodeNumber
-              )));
+              // Clear the whole title, not just this episode: the row is
+              // deduplicated to one card per show, so leaving sibling episodes
+              // behind would resurface the show on the next load.
+              removeShowWatchProgress(item.id);
+              setItems((prev) => prev.filter((i) => i.id !== item.id));
             };
 
             const cards: React.ReactNode[] = [];

@@ -6,6 +6,9 @@ import { peachifyProvider } from './PeachifyProvider';
 import { videasyProvider } from './VideasyProvider';
 import { vidCoreProvider } from './VidCoreProvider';
 import { vidZeeProvider } from './VidZeeProvider';
+import { mappleProvider } from './MappleProvider';
+import { m111Provider } from './M111Provider';
+import { streamXProvider } from './StreamXProvider';
 import type { ProviderId } from '../types';
 
 export const PROVIDERS: Record<ProviderId, VideoProvider> = {
@@ -16,6 +19,9 @@ export const PROVIDERS: Record<ProviderId, VideoProvider> = {
   peachify: peachifyProvider,
   vidcore: vidCoreProvider,
   vidzee: vidZeeProvider,
+  mapple: mappleProvider,
+  m111: m111Provider,
+  streamx: streamXProvider,
 };
 
 export function getProvider(id: ProviderId): VideoProvider {

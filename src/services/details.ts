@@ -8,6 +8,29 @@ import {
 import { resolveImdbTitle, resolveTmdbFromImdb, fetchWikipediaEpisodeCounts, fetchWikipediaSeasonEpisodeDetails } from './metadata';
 import type { WikipediaEpisodeDetail } from './metadata';
 import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { fetchTmdbSeasonsByTmdbId } from './embed2';
+
+/**
+ * Fill in `airDate` for episodes that are missing it by looking up the
+ * episode number in TMDB's per-season episode list (which reliably carries
+ * air dates). Mutates `seasons` in place.
+ */
+function enrichAirDates(seasons: Season[], tmdbSeasons: Season[] | null): void {
+  if (!tmdbSeasons) return;
+  for (const season of seasons) {
+    const tmdbSeason = tmdbSeasons.find((ts) => ts.seasonNumber === season.seasonNumber);
+    if (!tmdbSeason) continue;
+    const tmdbEpMap = new Map(tmdbSeason.episodes.map((e) => [e.episodeNumber, e]));
+    for (const ep of season.episodes) {
+      if (!ep.airDate) {
+        const tmdbEp = tmdbEpMap.get(ep.episodeNumber);
+        if (tmdbEp?.airDate) {
+          ep.airDate = tmdbEp.airDate;
+        }
+      }
+    }
+  }
+}
 
 // Media details: 2embed primary, Wikidata + TMDB fallback
 
@@ -197,7 +220,12 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
           })),
         });
       }
-    }
+     }
+
+    // Enrich episodes that lack an airDate using TMDB's per-season episode list.
+    // 2embed may omit air dates for some episodes, and placeholder/Wikipedia-padded
+    // episodes never carry one. TMDB is reliable, so backfill from it here.
+    enrichAirDates(seasonsWithData, tmdbSeasons);
 
     // Wikipedia per-season episode counts — authoritative when both 2embed and
     // TMDB undercount (e.g. Friends S7 = 24 while both APIs report 23 because
@@ -266,19 +294,26 @@ export async function getTVShowDetails(id: string): Promise<TVShowDetails> {
   const perSeason = Math.max(1, Math.floor(totalEpisodes / seasonsCount));
   const remainder = totalEpisodes - perSeason * seasonsCount;
 
-  const seasons: Season[] = [];
-  for (let s = 1; s <= seasonsCount; s++) {
-    const epCount = s === seasonsCount ? perSeason + remainder : perSeason;
-    seasons.push({
-      seasonNumber: s,
-      episodeCount: epCount,
-      episodes: Array.from({ length: epCount }, (_, i) => ({
+  // Prefer real TMDB episode data (with air dates) when the show has a TMDB id.
+  const tmdbSeasons = base.tmdbId ? await fetchTmdbSeasonsByTmdbId(base.tmdbId) : null;
+  const seasons: Season[] = tmdbSeasons?.length
+    ? tmdbSeasons
+    : [];
+
+  if (seasons.length === 0) {
+    for (let s = 1; s <= seasonsCount; s++) {
+      const epCount = s === seasonsCount ? perSeason + remainder : perSeason;
+      seasons.push({
         seasonNumber: s,
-        episodeNumber: i + 1,
-        title: `Episode ${i + 1}`,
-        overview: `Season ${s} Episode ${i + 1} of ${base.title}`,
-      })),
-    });
+        episodeCount: epCount,
+        episodes: Array.from({ length: epCount }, (_, i) => ({
+          seasonNumber: s,
+          episodeNumber: i + 1,
+          title: `Episode ${i + 1}`,
+          overview: `Season ${s} Episode ${i + 1} of ${base.title}`,
+        })),
+      });
+    }
   }
 
   return { ...base, seasons };

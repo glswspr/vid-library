@@ -39,8 +39,8 @@ const KEYS = {
 
 // Embeds fall back in this order: vidrock/vidapi are CORS-open, videasy is a
 // reliable third option, peachify is second-tier, vidsrc is last (most ad-heavy),
-// with vidcore/vidzee as additional options.
-const VALID_PROVIDERS: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'];
+// with vidcore/vidzee/mapple/111movies/streamx as additional options.
+const VALID_PROVIDERS: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'];
 
 export interface ServerHealth {
   success: number;
@@ -320,6 +320,21 @@ export function removeWatchProgress(id: string, season?: number, episode?: numbe
   const key = season && episode ? `${id}_s${season}e${episode}` : id;
   mutateProgress((items) => {
     delete items[key];
+  });
+}
+
+/**
+ * Remove every watch progress entry for a title.
+ * Continue Watching renders one card per show (the most recent episode), so
+ * dismissing that card has to clear all of the show's episode entries —
+ * otherwise the next remaining episode is picked back up on reload and the
+ * show reappears in the list.
+ */
+export function removeShowWatchProgress(id: string): void {
+  mutateProgress((items) => {
+    for (const [key, item] of Object.entries(items)) {
+      if (item.id === id) delete items[key];
+    }
   });
 }
 

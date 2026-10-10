@@ -1,5 +1,6 @@
 import type { ProviderId } from '../types';
 import { GENRE_ROWS_MAX } from '../constants';
+import { getRememberedProvider } from './storage';
 
 export interface AppSettings {
   defaultProvider: ProviderId;
@@ -21,13 +22,13 @@ const DEFAULTS: AppSettings = {
   accentColor: '#06b6d4',
   englishOnly: true,
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
-  preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'],
+  preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'],
   theme: 'dark',
 };
 
 function isValidProvider(value: unknown): ProviderId | null {
   if (typeof value !== 'string') return null;
-  if (['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee'].includes(value)) {
+  if (['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'].includes(value)) {
     return value as ProviderId;
   }
   return null;
@@ -57,7 +58,7 @@ function readSettings(): AppSettings {
       genreRows: sanitizeGenreRows(parsed.genreRows),
       preferredProviders: Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders.filter(isValidProvider) : DEFAULTS.preferredProviders,
       theme: isValidTheme(parsed.theme) ?? DEFAULTS.theme,
-    };
+      };
   } catch {
     return DEFAULTS;
   }
@@ -90,4 +91,12 @@ export function clearWatchHistory(): void {
     // ignore
   }
   window.dispatchEvent(new Event('settings-changed'));
+}
+
+/** Resolve the provider that should be used for a given media id.
+ *  Priority: remembered (last successful) > global default. */
+export function resolveDefaultProvider(mediaId: string): ProviderId {
+  const remembered = getRememberedProvider(mediaId);
+  if (remembered) return remembered;
+  return readSettings().defaultProvider;
 }

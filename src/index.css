@@ -120,7 +120,14 @@ html.tv-mode *:focus-visible {
   box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.25) !important;
 }
 
-/* Keep focused items clear of the sticky navbar and row edges */
+/* ── Toast slide-up animation ───────────────────────────────────── */
+@layer utilities {
+  @keyframes slide-up {
+    0% { opacity: 0; transform: translateY(1rem); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .animate-slide-up { animation: slide-up 0.2s ease-out; }
+}
 a[href],
 button,
 [role="button"],

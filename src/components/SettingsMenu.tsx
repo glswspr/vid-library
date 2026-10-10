@@ -114,19 +114,6 @@ export const SettingsMenu: FC = () => {
 
           <div className="overflow-y-auto px-4 pb-4">
           <label className="block mb-3">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Default server</span>
-            <select
-              value={settings.defaultProvider}
-              onChange={(e) => update({ defaultProvider: e.target.value as ProviderId })}
-              className="mt-1 w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-3 py-2 text-sm cursor-pointer focus:border-cyan-500"
-            >
-              {Object.entries(PROVIDERS).map(([id, p]) => (
-                <option key={id} value={id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block mb-3">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Preferred servers</span>
             <p className="text-[11px] text-slate-500 mt-1 mb-2">
               Pick servers in order of preference (highest priority first).

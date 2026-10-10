@@ -6,12 +6,18 @@ import { getTVShowDetails } from '../services/catalog';
 import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
-import { ArrowLeft, ChevronLeft, ChevronRight, Tv, Check, Bookmark, BookmarkCheck, Play, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Tv, Check, Bookmark, BookmarkCheck, Play, Eye, EyeOff, Calendar } from 'lucide-react';
 import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow } from '../utils/storage';
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
 import ExpandableText from '../components/ExpandableText';
+
+const formatAirDate = (dateStr: string): string => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, (m - 1), d);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export const TVShowPage: FC = () => {
   const { id, season: seasonParam, episode: episodeParam } = useParams<{
@@ -67,8 +73,10 @@ export const TVShowPage: FC = () => {
 
   const episodeCards = useMemo(() => {
     if (!activeSeasonData) return [];
+    const todayStr = new Date().toISOString().split('T')[0];
     return activeSeasonData.episodes.map((ep) => {
       const isSelected = ep.episodeNumber === currentEpisode;
+      const isUpcoming = !!ep.airDate && ep.airDate > todayStr;
       const progress = getWatchProgress(show?.id || '', currentSeason, ep.episodeNumber);
       const isWatched = progress && (
         progress.completed ||
@@ -101,25 +109,30 @@ export const TVShowPage: FC = () => {
       return (
         <div
           key={ep.episodeNumber}
-          onClick={() => handleSelectEpisode(ep.episodeNumber)}
+          onClick={() => { if (!isUpcoming) handleSelectEpisode(ep.episodeNumber); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              handleSelectEpisode(ep.episodeNumber);
+              if (!isUpcoming) handleSelectEpisode(ep.episodeNumber);
             }
           }}
           role="button"
-          tabIndex={0}
+          tabIndex={isUpcoming ? -1 : 0}
+          aria-disabled={isUpcoming || undefined}
           className={`
-            group relative rounded-lg border text-left transition-all duration-200 cursor-pointer overflow-hidden
+            group relative rounded-lg border text-left transition-all duration-200 overflow-hidden
             flex flex-col
-            hover:scale-[1.04] hover:shadow-xl hover:shadow-black/40 hover:border-slate-500
-            active:scale-[0.97]
-            ${isSelected
-              ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
-              : isWatched
-                ? 'bg-slate-800/40 border-emerald-500/60 shadow-sm shadow-emerald-500/10 hover:bg-slate-800'
-                : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
+            ${isUpcoming
+              ? 'cursor-not-allowed opacity-60 bg-slate-900/40 border-slate-800'
+              : 'cursor-pointer hover:scale-[1.04] hover:shadow-xl hover:shadow-black/40 hover:border-slate-500 active:scale-[0.97]'
+            }
+            ${isUpcoming
+              ? 'bg-slate-900/40 border-slate-800'
+              : isSelected
+                ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                : isWatched
+                  ? 'bg-slate-800/40 border-emerald-500/60 shadow-sm shadow-emerald-500/10 hover:bg-slate-800'
+                  : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
             }
           `}
         >
@@ -143,20 +156,28 @@ export const TVShowPage: FC = () => {
             {isWatched && (
               <div className="absolute inset-0 bg-emerald-500/25 ring-1 ring-inset ring-emerald-400/50 pointer-events-none" />
             )}
-            
+
             <div className="absolute top-1 left-1">
               <span className="text-[9px] font-bold text-white/90 bg-black/50 backdrop-blur-sm rounded px-1.5 py-0.5 border border-white/10 shadow-sm">
                 {ep.episodeNumber}
               </span>
             </div>
-            
+
             {isWatched && (
               <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_6px_rgba(52,211,153,0.7)]">
                 <Check className="w-3 h-3 text-slate-950" strokeWidth={3.5} />
               </div>
             )}
-            
-            <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+
+            {isUpcoming && (
+              <div className="absolute top-1 right-1">
+                <span className="text-[9px] font-bold text-amber-300/90 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 border border-amber-500/30 shadow-sm">
+                  Soon
+                </span>
+              </div>
+            )}
+
+            {!isUpcoming && (<div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
               <button
                 type="button"
                 onClick={handleToggleWatched}
@@ -178,7 +199,7 @@ export const TVShowPage: FC = () => {
                   <Eye className="w-5 h-5" />
                 )}
               </button>
-            </div>
+            </div>)}
             
             {progressPercent > 0 && (
               <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
@@ -191,6 +212,13 @@ export const TVShowPage: FC = () => {
             <div className="text-[10px] text-slate-400 line-clamp-1 font-medium leading-tight group-hover:text-slate-200 transition-colors">
               {ep.title || `Episode ${ep.episodeNumber}`}
             </div>
+            {ep.airDate && (
+              <div className={`text-[9px] mt-0.5 flex items-center gap-1 ${isUpcoming ? 'text-amber-400/90 font-semibold' : 'text-slate-500'}`}>
+                <Calendar className="w-2.5 h-2.5" />
+                <span>{formatAirDate(ep.airDate)}</span>
+                {isUpcoming && <span className="text-amber-400/60">• Upcoming</span>}
+              </div>
+            )}
           </div>
         </div>
       );

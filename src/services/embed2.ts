@@ -292,14 +292,15 @@ export async function fetchSeasonEpisodes(
  * list (falling back to TMDB's per-season episode_count when the list
  * fetch fails). Returns null when TMDB can't resolve the title.
  */
-export async function fetchTmdbTVEpisodes(imdbId: string): Promise<Season[] | null> {
+/**
+ * Fetch per-season episode lists from TMDB by TMDB id. Each episode carries an
+ * air_date (ISO YYYY-MM-DD) used to compute the "Soon"/disabled state in the
+ * episode grid.
+ */
+export async function fetchTmdbSeasonsByTmdbId(tmdbId: string): Promise<Season[] | null> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
   if (!tmdbKey) return null;
   try {
-    const tmdbId = (await resolveTmdbFromImdb(imdbId, 'tv'))?.id;
-    if (!tmdbId) return null;
-
-    // Season metadata (season_number + episode_count per season)
     const detailRes = await fetch(
       `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbKey}`,
     );
@@ -314,7 +315,7 @@ export async function fetchTmdbTVEpisodes(imdbId: string): Promise<Season[] | nu
     for (const meta of seasonMeta) {
       const seasonNumber = meta.season_number;
 
-      // Try to grab the real episode list for this season (titles/overviews)
+      // Try to grab the real episode list for this season (titles/overviews/air dates)
       let episodes: Episode[] | null = null;
       try {
         const epRes = await fetch(
@@ -359,6 +360,12 @@ export async function fetchTmdbTVEpisodes(imdbId: string): Promise<Season[] | nu
     console.warn('TMDB TV episodes fetch failed:', e);
     return null;
   }
+}
+
+export async function fetchTmdbTVEpisodes(imdbId: string): Promise<Season[] | null> {
+  const tmdbId = (await resolveTmdbFromImdb(imdbId, 'tv'))?.id;
+  if (!tmdbId) return null;
+  return fetchTmdbSeasonsByTmdbId(tmdbId);
 }
 
 export async function fetchSimilarMovies(

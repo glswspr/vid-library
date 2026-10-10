@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { HomePage } from './pages/HomePage';
 import { MoviePage } from './pages/MoviePage';
 import { TVShowPage } from './pages/TVShowPage';
+import { WatchHistoryPage } from './pages/WatchHistoryPage';
 import { NotFound } from './pages/NotFound';
 import { Navbar } from './components/Navbar';
 import { useSpatialNav } from './hooks/useSpatialNav';
@@ -87,6 +88,7 @@ export const App: FC = () => {
         <OfflineBanner />
         <Routes>
             <Route path="/" element={<HomePage />} />
+            <Route path="/watch-history" element={<WatchHistoryPage />} />
             <Route path="/movie/:id" element={<MoviePage />} />
             <Route path="/tv/:id" element={<TVShowPage />} />
             <Route path="/tv/:id/season/:season/episode/:episode" element={<TVShowPage />} />

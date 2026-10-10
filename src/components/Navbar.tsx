@@ -1,7 +1,7 @@
 import type { FC, ChangeEvent, KeyboardEvent } from 'react';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Film, Search, X, Loader2 } from 'lucide-react';
+import { Film, Search, X, Loader2, Clock } from 'lucide-react';
 import { SettingsMenu } from '../components/SettingsMenu';
 import { WatchStats } from '../components/WatchStats';
 import { SearchResults } from './SearchResults';
@@ -193,6 +193,14 @@ export const Navbar: FC = () => {
         <div className="flex items-center gap-2">
           <WatchStats />
           
+          <Link
+            to="/watch-history"
+            className="inline-flex items-center justify-center w-11 h-11 rounded-xl border-2 bg-slate-800 border-slate-700 text-slate-200 hover:border-cyan-500 hover:text-white hover:bg-slate-800/50 transition-colors cursor-pointer"
+            aria-label="Watch History"
+          >
+            <Clock className="w-5 h-5" />
+          </Link>
+
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               {isSearching ? (
