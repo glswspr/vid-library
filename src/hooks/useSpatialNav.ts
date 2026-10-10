@@ -113,6 +113,17 @@ export function useSpatialNav(): void {
       // Never hijack arrows while typing, or inside embeds / video controls.
       if (isEditable(target)) return;
 
+      // Inside the video player, arrow keys must seek the video (left/right)
+      // rather than jump between the server buttons. Let the embed handle them.
+      // Covers both focused elements inside the player and the common case
+      // where focus sits on <body> while the player is fullscreen.
+      if (
+        target?.closest('[data-video-player-outer]') ||
+        document.fullscreenElement?.closest('[data-video-player-outer]')
+      ) {
+        return;
+      }
+
       const active = document.activeElement as HTMLElement | null;
       const noFocus =
         !active ||
