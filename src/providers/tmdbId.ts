@@ -1,4 +1,4 @@
-import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from '../services/config';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson } from '../services/config';
 
 const imdbToTmdbCache = new Map<string, string | null>();
 
@@ -18,20 +18,14 @@ export async function resolveTmdbId(id: string): Promise<string | null> {
   if (cached !== undefined) return cached;
 
   const apiKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!apiKey) {
+  if (!canUseTmdb(apiKey)) {
     imdbToTmdbCache.set(id, null);
     return null;
   }
 
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/find/${id}?api_key=${apiKey}&external_source=imdb_id`,
-    );
-    if (!res.ok) {
-      imdbToTmdbCache.set(id, null);
-      return null;
-    }
-    const data = await res.json();
+    const data = await tmdbFetchJson(`/find/${encodeURIComponent(id)}?external_source=imdb_id`, apiKey) as
+      { movie_results?: { id: number }[]; tv_results?: { id: number }[]; tv_episode_results?: { id: number }[] } | null;
     const tmdbId =
       data?.movie_results?.[0]?.id ??
       data?.tv_results?.[0]?.id ??

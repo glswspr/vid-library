@@ -1,5 +1,4 @@
 import { useRef, useMemo, memo, type ReactNode } from 'react';
-import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { MediaCard } from './MediaCard';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -11,7 +10,7 @@ interface MediaRowProps {
   emptyMessage?: string;
 }
 
-export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }) => {
+export const MediaRow = memo(function MediaRow({ title, items, icon, emptyMessage }: MediaRowProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   const scrollDir = (dir: 1 | -1) => {
@@ -70,6 +69,6 @@ export const MediaRow: FC<MediaRowProps> = ({ title, items, icon, emptyMessage }
       )}
     </section>
   );
-};
+});
 
 export default memo(MediaRow);

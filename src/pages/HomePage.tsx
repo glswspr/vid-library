@@ -57,10 +57,14 @@ export const HomePage: FC = () => {
   }, []);
 
   const performSearch = useCallback(async (query: string) => {
-    // Cancel any in-flight request
+    // Cancel any in-flight request so a slower earlier keystroke can never
+    // overwrite a newer result, and mark it superseded.
     if (abortRef.current) {
       abortRef.current.abort();
     }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
 
     if (query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
       setResults([]);
@@ -76,13 +80,17 @@ export const HomePage: FC = () => {
     setSelectedIndex(-1);
 
     try {
-      const searchResults = await searchByTitle(query);
+      const searchResults = await searchByTitle(query, signal);
+      if (signal.aborted) return;
       setResults(searchResults);
-    } catch {
+    } catch (e) {
+      // An aborted request is expected when a newer query arrives — the newer
+      // query owns the UI state now.
+      if (signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
       setSearchError('Search unavailable. Add a free TMDB API key in .env for full search.');
       setResults([]);
     } finally {
-      setIsSearching(false);
+      if (!signal.aborted) setIsSearching(false);
     }
   }, []);
 

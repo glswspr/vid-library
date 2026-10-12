@@ -1,6 +1,6 @@
 import type { ProviderId } from '../types';
 import { GENRE_ROWS_MAX } from '../constants';
-import { getRememberedProvider } from './storage';
+import { getRememberedProvider, clearWatchHistory as clearWatchHistoryInStorage } from './storage';
 
 export interface AppSettings {
   defaultProvider: ProviderId;
@@ -83,14 +83,14 @@ export function saveSettings(partial: Partial<AppSettings>): AppSettings {
   return next;
 }
 
+/**
+ * Watch history lives in `storage.ts` (in-memory cache + batched writes).
+ * This must delegate there — dropping the raw localStorage key on its own
+ * left the in-memory cache intact, so entries were never actually cleared and
+ * the next progress write re-persisted the whole "cleared" list.
+ */
 export function clearWatchHistory(): void {
-  try {
-    localStorage.removeItem('vid_library_progress_v2');
-    localStorage.removeItem('vid_library_provider_memory_v1');
-  } catch {
-    // ignore
-  }
-  window.dispatchEvent(new Event('settings-changed'));
+  clearWatchHistoryInStorage();
 }
 
 /** Resolve the provider that should be used for a given media id.

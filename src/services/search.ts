@@ -1,4 +1,4 @@
-import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbUrl } from './config';
 
 export interface SearchResult {
   imdbId: string;
@@ -10,43 +10,53 @@ export interface SearchResult {
 }
 
 /**
+ * `AbortError` is thrown by an aborted fetch. Callers distinguish it from real
+ * failures so a cancelled request is never rendered as "no results".
+ */
+function isAbort(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
+export { isAbort };
+
+/**
  * Search for movies and TV shows by title.
  *
  * Primary: TMDB search/multi (rich results incl. posters; works without a
  * user key via the fallback key). Fallback: Wikidata (free, CC0, CORS-friendly),
  * then OMDb (requires a key). Each step is isolated so a failure never breaks
  * the next one.
+ *
+ * `signal` aborts the in-flight request so a newer keystroke supersedes it.
  */
-export async function searchByTitle(query: string): Promise<SearchResult[]> {
+export async function searchByTitle(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery || cleanQuery.length < 2) return [];
 
   // 1. TMDB — richest results incl. posters
-  const tmdbResults = await searchTmdb(cleanQuery);
+  const tmdbResults = await searchTmdb(cleanQuery, signal);
   if (tmdbResults.length > 0) return tmdbResults;
 
   // 2. Wikidata — free, CORS-friendly, no key
-  const wikidataResults = await searchWikidata(cleanQuery);
+  const wikidataResults = await searchWikidata(cleanQuery, signal);
   if (wikidataResults.length > 0) return wikidataResults;
 
   // 3. OMDb — requires free API key
-  const omdbResults = await searchOmdb(cleanQuery);
+  const omdbResults = await searchOmdb(cleanQuery, signal);
   if (omdbResults.length > 0) return omdbResults.slice(0, 15);
 
   return [];
 }
 
-async function searchTmdb(cleanQuery: string): Promise<SearchResult[]> {
+async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return [];
+  if (!canUseTmdb(tmdbKey)) return [];
 
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/search/multi?api_key=${tmdbKey}&query=${encodeURIComponent(cleanQuery)}&page=1`
-    );
-    if (!res.ok) return [];
+    const searchRes = await fetch(tmdbUrl(`/search/multi?query=${encodeURIComponent(cleanQuery)}&page=1`, tmdbKey), { signal });
+    if (!searchRes.ok) return [];
 
-    const data = await res.json();
+    const data = await searchRes.json();
     const items = (data.results || []).filter(
       (item: any) => item.media_type === 'movie' || item.media_type === 'tv'
     );
@@ -57,11 +67,12 @@ async function searchTmdb(cleanQuery: string): Promise<SearchResult[]> {
     for (const item of items.slice(0, 8)) {
       let imdbId: string | undefined;
       try {
-        const extRes = await fetch(
-          `https://api.themoviedb.org/3/${item.media_type}/${item.id}/external_ids?api_key=${tmdbKey}`
-        );
+        const extRes = await fetch(tmdbUrl(`/${item.media_type}/${item.id}/external_ids`, tmdbKey), { signal });
         if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
-      } catch { /* skip */ }
+      } catch (e) {
+        if (isAbort(e)) throw e;
+        /* skip */
+      }
       if (!imdbId) continue;
       results.push({
         imdbId,
@@ -74,16 +85,17 @@ async function searchTmdb(cleanQuery: string): Promise<SearchResult[]> {
     }
     return results;
   } catch (e) {
+    if (isAbort(e)) throw e;
     console.warn('TMDB search failed:', e);
     return [];
   }
 }
 
-async function searchWikidata(cleanQuery: string): Promise<SearchResult[]> {
+async function searchWikidata(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
   try {
     // Step 1: search for matching Wikidata entities
     const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(cleanQuery)}&language=en&limit=15&format=json&origin=*`;
-    const searchRes = await fetch(searchUrl);
+    const searchRes = await fetch(searchUrl, { signal });
 
     if (!searchRes.ok) return [];
     const searchData = await searchRes.json();
@@ -93,7 +105,7 @@ async function searchWikidata(cleanQuery: string): Promise<SearchResult[]> {
     // Step 2: fetch claims (IMDb ID, type, year) for all matched entities
     const entityIds = entities.map((e: any) => e.id).join('|');
     const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityIds}&props=claims&format=json&origin=*`;
-    const claimsRes = await fetch(claimsUrl);
+    const claimsRes = await fetch(claimsUrl, { signal });
     if (!claimsRes.ok) return [];
 
     const claimsData = await claimsRes.json();
@@ -145,17 +157,19 @@ async function searchWikidata(cleanQuery: string): Promise<SearchResult[]> {
 
     return results;
   } catch (e) {
+    if (isAbort(e)) throw e;
     console.warn('Wikidata search failed:', e);
     return [];
   }
 }
 
-async function searchOmdb(cleanQuery: string): Promise<SearchResult[]> {
+async function searchOmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
   if (!OMDB_API_KEY) return [];
 
   try {
     const res = await fetch(
-      `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&s=${encodeURIComponent(cleanQuery)}`
+      `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&s=${encodeURIComponent(cleanQuery)}`,
+      { signal },
     );
     if (!res.ok) return [];
 
@@ -179,6 +193,7 @@ async function searchOmdb(cleanQuery: string): Promise<SearchResult[]> {
     }
     return results;
   } catch (e) {
+    if (isAbort(e)) throw e;
     console.warn('OMDb search failed:', e);
     return [];
   }

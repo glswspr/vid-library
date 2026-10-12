@@ -7,7 +7,7 @@ import {
 } from './embed2';
 import { resolveImdbTitle, resolveTmdbFromImdb, fetchWikipediaEpisodeCounts, fetchWikipediaSeasonEpisodeDetails } from './metadata';
 import type { WikipediaEpisodeDetail } from './metadata';
-import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson } from './config';
 import { fetchTmdbSeasonsByTmdbId } from './embed2';
 
 /**
@@ -40,13 +40,10 @@ async function fetchTmdbDetail(
   type: 'movie' | 'tv',
 ): Promise<MediaItem | null> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return null;
+  if (!canUseTmdb(tmdbKey)) return null;
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/${type}/${id}?api_key=${tmdbKey}`,
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await tmdbFetchJson(`/${type}/${id}`, tmdbKey) as Record<string, any> | null;
+    if (!data) return null;
     return {
       id: data.id.toString(),
       imdbId: data.imdb_id || undefined,

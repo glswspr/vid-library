@@ -86,8 +86,8 @@ export const TVShowPage: FC = () => {
         ? Math.min(100, Math.round((progress.progress / progress.duration) * 100))
         : 0;
 
-      const handleToggleWatched = (e: React.MouseEvent) => {
-        e.stopPropagation();
+      const handleToggleWatched = (e?: React.MouseEvent) => {
+        e?.stopPropagation();
         if (!show) return;
         if (isWatched) {
           markEpisodeUnwatched(show.id, currentSeason, ep.episodeNumber);
@@ -107,82 +107,112 @@ export const TVShowPage: FC = () => {
       };
 
       return (
-        <div
-          key={ep.episodeNumber}
-          onClick={() => { if (!isUpcoming) handleSelectEpisode(ep.episodeNumber); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              if (!isUpcoming) handleSelectEpisode(ep.episodeNumber);
-            }
-          }}
-          role="button"
-          tabIndex={isUpcoming ? -1 : 0}
-          aria-disabled={isUpcoming || undefined}
-          className={`
-            group relative rounded-lg border text-left transition-all duration-200 overflow-hidden
-            flex flex-col
-            ${isUpcoming
-              ? 'cursor-not-allowed opacity-60 bg-slate-900/40 border-slate-800'
-              : 'cursor-pointer hover:scale-[1.04] hover:shadow-xl hover:shadow-black/40 hover:border-slate-500 active:scale-[0.97]'
-            }
-            ${isUpcoming
-              ? 'bg-slate-900/40 border-slate-800'
-              : isSelected
-                ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
-                : isWatched
-                  ? 'bg-slate-800/40 border-emerald-500/60 shadow-sm shadow-emerald-500/10 hover:bg-slate-800'
-                  : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
-            }
-          `}
-        >
-          <div className="aspect-[4/3] w-full relative overflow-hidden bg-slate-800">
-            {ep.stillPath ? (
-              <img
-                src={ep.stillPath}
-                alt=""
-                loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 relative">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-700/20 to-transparent" />
-                <Play className="w-5 h-5 text-slate-600/60" />
-              </div>
-            )}
-            
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        // Wrapper is a positioned container so the watch toggle can be a
+        // DOM *sibling* of the card rather than a descendant. Nesting a real
+        // <button> inside another interactive element is invalid HTML and
+        // breaks keyboard/screen-reader operation.
+        <div key={ep.episodeNumber} className="relative group">
+          <div
+            onClick={() => { if (!isUpcoming) handleSelectEpisode(ep.episodeNumber); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!isUpcoming) handleSelectEpisode(ep.episodeNumber);
+              }
+            }}
+            role="button"
+            tabIndex={isUpcoming ? -1 : 0}
+            aria-label={`Season ${currentSeason} Episode ${ep.episodeNumber}${ep.title ? `: ${ep.title}` : ''}`}
+            aria-disabled={isUpcoming || undefined}
+            aria-current={isSelected ? 'true' : undefined}
+            className={`
+              relative rounded-lg border text-left transition-all duration-200 overflow-hidden
+              flex flex-col
+              ${isUpcoming
+                ? 'cursor-not-allowed opacity-60 bg-slate-900/40 border-slate-800'
+                : 'cursor-pointer hover:scale-[1.04] hover:shadow-xl hover:shadow-black/40 hover:border-slate-500 active:scale-[0.97]'
+              }
+              ${isUpcoming
+                ? 'bg-slate-900/40 border-slate-800'
+                : isSelected
+                  ? 'bg-cyan-500/10 border-cyan-500/80 ring-1 ring-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                  : isWatched
+                    ? 'bg-slate-800/40 border-emerald-500/60 shadow-sm shadow-emerald-500/10 hover:bg-slate-800'
+                    : 'bg-slate-800/40 border-slate-700/60 shadow-sm hover:bg-slate-800'
+              }
+            `}
+          >
+            <div className="aspect-[4/3] w-full relative overflow-hidden bg-slate-800">
+              {ep.stillPath ? (
+                <img
+                  src={ep.stillPath}
+                  alt=""
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 relative">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-slate-700/20 to-transparent" />
+                  <Play className="w-5 h-5 text-slate-600/60" />
+                </div>
+              )}
 
-            {isWatched && (
-              <div className="absolute inset-0 bg-emerald-500/25 ring-1 ring-inset ring-emerald-400/50 pointer-events-none" />
-            )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
-            <div className="absolute top-1 left-1">
-              <span className="text-[9px] font-bold text-white/90 bg-black/50 backdrop-blur-sm rounded px-1.5 py-0.5 border border-white/10 shadow-sm">
-                {ep.episodeNumber}
-              </span>
-            </div>
+              {isWatched && (
+                <div className="absolute inset-0 bg-emerald-500/25 ring-1 ring-inset ring-emerald-400/50 pointer-events-none" />
+              )}
 
-            {isWatched && (
-              <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_6px_rgba(52,211,153,0.7)]">
-                <Check className="w-3 h-3 text-slate-950" strokeWidth={3.5} />
-              </div>
-            )}
-
-            {isUpcoming && (
-              <div className="absolute top-1 right-1">
-                <span className="text-[9px] font-bold text-amber-300/90 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 border border-amber-500/30 shadow-sm">
-                  Soon
+              <div className="absolute top-1 left-1">
+                <span className="text-[9px] font-bold text-white/90 bg-black/50 backdrop-blur-sm rounded px-1.5 py-0.5 border border-white/10 shadow-sm">
+                  {ep.episodeNumber}
                 </span>
               </div>
-            )}
 
-            {!isUpcoming && (<div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+              {isWatched && !isUpcoming && (
+                <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_6px_rgba(52,211,153,0.7)]">
+                  <Check className="w-3 h-3 text-slate-950" strokeWidth={3.5} />
+                </div>
+              )}
+
+              {isUpcoming && (
+                <div className="absolute top-1 right-1">
+                  <span className="text-[9px] font-bold text-amber-300/90 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5 border border-amber-500/30 shadow-sm">
+                    Soon
+                  </span>
+                </div>
+              )}
+
+              {progressPercent > 0 && (
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                  <div className="h-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" style={{ width: `${progressPercent}%` }} />
+                </div>
+              )}
+            </div>
+
+            <div className="px-1.5 py-1.5">
+              <div className="text-[10px] text-slate-400 line-clamp-1 font-medium leading-tight group-hover:text-slate-200 transition-colors">
+                {ep.title || `Episode ${ep.episodeNumber}`}
+              </div>
+              {ep.airDate && (
+                <div className={`text-[9px] mt-0.5 flex items-center gap-1 ${isUpcoming ? 'text-amber-400/90 font-semibold' : 'text-slate-500'}`}>
+                  <Calendar className="w-2.5 h-2.5" />
+                  <span>{formatAirDate(ep.airDate)}</span>
+                  {isUpcoming && <span className="text-amber-400/60">• Upcoming</span>}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sibling of the card, not a child: no nested interactive elements. */}
+          {!isUpcoming && (
+            <div className="absolute inset-x-0 top-0 aspect-[4/3] bg-slate-950/60 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
               <button
                 type="button"
                 onClick={handleToggleWatched}
                 aria-label={isWatched ? 'Mark as Unwatched' : 'Mark as Watched'}
                 className={`
+                  pointer-events-auto
                   w-10 h-10 rounded-full border backdrop-blur-md
                   flex items-center justify-center
                   transform scale-75 group-hover:scale-100 transition-transform duration-300
@@ -199,27 +229,8 @@ export const TVShowPage: FC = () => {
                   <Eye className="w-5 h-5" />
                 )}
               </button>
-            </div>)}
-            
-            {progressPercent > 0 && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                <div className="h-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" style={{ width: `${progressPercent}%` }} />
-              </div>
-            )}
-          </div>
-          
-          <div className="px-1.5 py-1.5">
-            <div className="text-[10px] text-slate-400 line-clamp-1 font-medium leading-tight group-hover:text-slate-200 transition-colors">
-              {ep.title || `Episode ${ep.episodeNumber}`}
             </div>
-            {ep.airDate && (
-              <div className={`text-[9px] mt-0.5 flex items-center gap-1 ${isUpcoming ? 'text-amber-400/90 font-semibold' : 'text-slate-500'}`}>
-                <Calendar className="w-2.5 h-2.5" />
-                <span>{formatAirDate(ep.airDate)}</span>
-                {isUpcoming && <span className="text-amber-400/60">• Upcoming</span>}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       );
     });

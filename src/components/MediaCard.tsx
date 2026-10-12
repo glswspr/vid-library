@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react';
-import type { FC, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { MediaItem } from '../types';
 import { isInWatchlist, toggleWatchlist } from '../utils/storage';
@@ -9,7 +9,7 @@ interface MediaCardProps {
   item: MediaItem;
 }
 
-export const MediaCard: FC<MediaCardProps> = ({ item }) => {
+export const MediaCard = memo(function MediaCard({ item }: MediaCardProps) {
   const [inList, setInList] = useState<boolean>(() => isInWatchlist(item.id));
 
   useEffect(() => {
@@ -113,6 +113,6 @@ export const MediaCard: FC<MediaCardProps> = ({ item }) => {
       </div>
     </Link>
   );
-};
+});
 
 export default memo(MediaCard);

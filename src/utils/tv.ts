@@ -3,7 +3,7 @@
  * tailor itself: bigger targets, stronger focus rings, no backdrop blur.
  */
 
-import { FALLBACK_TMDB_API_KEY } from '../services/config';
+import { FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson } from '../services/config';
 
 export function isTvDevice(): boolean {
   if (typeof window === 'undefined') return false;
@@ -65,19 +65,16 @@ export async function resolveImdbToTmdb(imdbId: string): Promise<string | null> 
   // we'll do a simple fetch here
   const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || import.meta.env.VITE_FALLBACK_TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
 
-  if (!TMDB_API_KEY) {
+  if (!canUseTmdb(TMDB_API_KEY)) {
     // No TMDB key available, can't resolve
     return null;
   }
 
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${TMDB_API_KEY}&external_source=imdb_id`,
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const movie = data.movie_results?.[0];
-    const show = data.tv_results?.[0];
+    const data = await tmdbFetchJson(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, TMDB_API_KEY) as
+      { movie_results?: { id: number }[]; tv_results?: { id: number }[] } | null;
+    const movie = data?.movie_results?.[0];
+    const show = data?.tv_results?.[0];
     const result = show ?? movie;
     if (!result || !result.id) return null;
     return result.id.toString();

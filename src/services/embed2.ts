@@ -1,5 +1,5 @@
 import type { MediaItem, Episode, Season } from '../types';
-import { EMBED2_BASE, TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { EMBED2_BASE, TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson } from './config';
 import { resolveTmdbFromImdb, fetchTmdbRating } from './metadata';
 
 interface Embed2TrendingItem {
@@ -126,26 +126,24 @@ async function fetchDiscoverTmdb(
   page: number = 1,
 ): Promise<MediaItem[]> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return [];
+  if (!canUseTmdb(tmdbKey)) return [];
   try {
     const since = new Date(Date.now() - DISCOVER_FRESHNESS_MS).toISOString().slice(0, 10);
     const dateParam = type === 'movie' ? 'primary_release_date' : 'first_air_date';
     const params = new URLSearchParams({
-      api_key: tmdbKey,
       sort_by: 'popularity.desc',
       page: String(page),
       'vote_average.gte': String(DISCOVER_MIN_RATING[type]),
       'vote_count.gte': String(DISCOVER_MIN_VOTES[type]),
       [`${dateParam}.gte`]: since,
     });
+    if (tmdbKey) params.set('api_key', tmdbKey);
     if (englishOnly) params.set('with_original_language', 'en');
 
-    const res = await fetch(
-      `https://api.themoviedb.org/3/discover/${type}?${params.toString()}`,
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results ?? []).slice(0, 20).map((it: any) => mapTmdbResult(it, type));
+    const data = await tmdbFetchJson(`/discover/${type}?${params.toString()}`, tmdbKey);
+    if (!data || typeof data !== 'object' || !('results' in data)) return [];
+    return ((data as { results?: unknown[] }).results ?? []).slice(0, 20)
+      .map((it) => mapTmdbResult(it, type));
   } catch (e) {
     console.warn('TMDB discover failed:', e);
     return [];
@@ -169,14 +167,12 @@ export function mapTmdbResult(it: any, type: 'movie' | 'tv'): MediaItem {
 /** TMDB trending fallback (returns numeric TMDB ids — the detail pages resolve those). */
 async function fetchTrendingTmdb(type: 'movie' | 'tv'): Promise<MediaItem[]> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return [];
+  if (!canUseTmdb(tmdbKey)) return [];
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/trending/${type}/week?api_key=${tmdbKey}`,
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results ?? []).slice(0, 20).map((it: any) => mapTmdbResult(it, type));
+    const data = await tmdbFetchJson(`/trending/${type}/week`, tmdbKey);
+    if (!data || typeof data !== 'object' || !('results' in data)) return [];
+    return ((data as { results?: unknown[] }).results ?? []).slice(0, 20)
+      .map((it) => mapTmdbResult(it, type));
   } catch (e) {
     console.warn('TMDB trending failed:', e);
     return [];
@@ -185,7 +181,7 @@ async function fetchTrendingTmdb(type: 'movie' | 'tv'): Promise<MediaItem[]> {
 
 async function enrichWithTmdbRatings(items: MediaItem[], type: 'movie' | 'tv'): Promise<MediaItem[]> {
   const key = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!key || items.length === 0) return items;
+  if (!canUseTmdb(key) || items.length === 0) return items;
 
   const results = await Promise.allSettled(
     items.map(async (item) => {
@@ -203,19 +199,17 @@ async function enrichWithTmdbRatings(items: MediaItem[], type: 'movie' | 'tv'): 
 /** TMDB similar fallback — uses the numeric TMDB id directly, or resolves an IMDb id first. */
 async function fetchSimilarTmdb(id: string, type: 'movie' | 'tv'): Promise<MediaItem[]> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return [];
+  if (!canUseTmdb(tmdbKey)) return [];
   try {
     // If we were handed an IMDb id, resolve it to a numeric TMDB id first.
     const tmdbId = id.startsWith('tt')
       ? (await resolveTmdbFromImdb(id, type))?.id
       : id;
     if (!tmdbId) return [];
-    const res = await fetch(
-      `https://api.themoviedb.org/3/${type}/${tmdbId}/similar?api_key=${tmdbKey}`,
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results ?? []).slice(0, 20).map((it: any) => mapTmdbResult(it, type));
+    const data = await tmdbFetchJson(`/${type}/${tmdbId}/similar`, tmdbKey);
+    if (!data || typeof data !== 'object' || !('results' in data)) return [];
+    return ((data as { results?: unknown[] }).results ?? []).slice(0, 20)
+      .map((it) => mapTmdbResult(it, type));
   } catch (e) {
     console.warn('TMDB similar failed:', e);
     return [];
@@ -299,16 +293,12 @@ export async function fetchSeasonEpisodes(
  */
 export async function fetchTmdbSeasonsByTmdbId(tmdbId: string): Promise<Season[] | null> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!tmdbKey) return null;
+  if (!canUseTmdb(tmdbKey)) return null;
   try {
-    const detailRes = await fetch(
-      `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${tmdbKey}`,
-    );
-    if (!detailRes.ok) return null;
-    const detail = await detailRes.json();
+    const detail = await tmdbFetchJson(`/tv/${tmdbId}`, tmdbKey) as { seasons?: { season_number: number; episode_count: number }[] } | null;
     const seasonMeta: { season_number: number; episode_count: number }[] = (
       detail?.seasons ?? []
-    ).filter((s: any) => s.season_number > 0);
+    ).filter((s) => s.season_number > 0);
     if (seasonMeta.length === 0) return null;
 
     const seasons: Season[] = [];
@@ -318,22 +308,18 @@ export async function fetchTmdbSeasonsByTmdbId(tmdbId: string): Promise<Season[]
       // Try to grab the real episode list for this season (titles/overviews/air dates)
       let episodes: Episode[] | null = null;
       try {
-        const epRes = await fetch(
-          `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${tmdbKey}`,
-        );
-        if (epRes.ok) {
-          const epData = await epRes.json();
-          const list = epData?.episodes ?? [];
-          if (list.length > 0) {
-            episodes = list.map((ep: any) => ({
-              seasonNumber: ep.season_number ?? seasonNumber,
-              episodeNumber: ep.episode_number,
-              title: ep.name || `Episode ${ep.episode_number}`,
-              airDate: ep.air_date || undefined,
-              overview: ep.overview || undefined,
-              stillPath: ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : undefined,
-            }));
-          }
+        const epData = await tmdbFetchJson(`/tv/${tmdbId}/season/${seasonNumber}`, tmdbKey) as
+          { episodes?: { season_number?: number; episode_number: number; name?: string; air_date?: string; overview?: string; still_path?: string }[] } | null;
+        const list = epData?.episodes ?? [];
+        if (list.length > 0) {
+          episodes = list.map((ep) => ({
+            seasonNumber: ep.season_number ?? seasonNumber,
+            episodeNumber: ep.episode_number,
+            title: ep.name || `Episode ${ep.episode_number}`,
+            airDate: ep.air_date || undefined,
+            overview: ep.overview || undefined,
+            stillPath: ep.still_path ? `https://image.tmdb.org/t/p/w300${ep.still_path}` : undefined,
+          }));
         }
       } catch {
         // fall through to count-based placeholders

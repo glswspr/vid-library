@@ -96,9 +96,12 @@ export function useSpatialNav(): void {
 
       if (e.key === 'Escape' || e.key === 'GoBack') {
         // Let the browser exit fullscreen first; keep Escape local while typing.
+        // If a dialog/menu is open, let that handle Escape — going back at the
+        // same time would close the dialog AND navigate away.
         if (
           !document.fullscreenElement &&
           !isEditable(target) &&
+          !document.querySelector('[role="dialog"], [role="menu"]') &&
           window.history.length > 1
         ) {
           e.preventDefault();

@@ -1,5 +1,5 @@
 import type { MediaItem, MediaType } from '../types';
-import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson } from './config';
 import { mapTmdbResult } from './embed2';
 import { resolveTmdbFromImdb } from './metadata';
 import { getAllWatchProgress } from '../utils/storage';
@@ -35,13 +35,13 @@ async function fetchTmdbList(
   type: MediaType,
 ): Promise<MediaItem[]> {
   const key = getTmdbKey();
-  if (!key) return [];
+  if (!canUseTmdb(key)) return [];
   try {
-    const qs = new URLSearchParams({ api_key: key, ...params });
-    const res = await fetch(`https://api.themoviedb.org/3/${path}?${qs.toString()}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results ?? []).slice(0, ROW_LIMIT).map((it: any) => mapTmdbResult(it, type));
+    const qs = new URLSearchParams(params);
+    if (key) qs.set('api_key', key);
+    const data = await tmdbFetchJson(`/${path}?${qs.toString()}`, key) as { results?: unknown[] } | null;
+    if (!data?.results) return [];
+    return data.results.slice(0, ROW_LIMIT).map((it) => mapTmdbResult(it, type));
   } catch (e) {
     console.warn(`TMDB row fetch failed: ${path}`, e);
     return [];
@@ -130,12 +130,11 @@ export async function getMovieGenres(): Promise<Genre[]> {
   }
 
   const key = getTmdbKey();
-  if (!key) return [];
+  if (!canUseTmdb(key)) return [];
   try {
-    const res = await fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${key}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    const items = ((data.genres ?? []) as Genre[]).filter((g) => g?.id && g?.name);
+    const data = await tmdbFetchJson('/genre/movie/list', key) as { genres?: { id: number; name: string }[] } | null;
+    if (!data?.genres) return [];
+    const items = data.genres.filter((g) => g?.id && g?.name);
     try {
       localStorage.setItem(GENRES_KEY, JSON.stringify({ at: Date.now(), items }));
     } catch {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
-import { getAllWatchProgress, removeWatchProgress, saveWatchProgress } from '../utils/storage';
+import { getAllWatchProgress, removeWatchProgress, saveWatchProgress, clearWatchHistory } from '../utils/storage';
 import type { WatchProgress } from '../types';
 import { Clock, Trash2, Film, Tv, Search, Filter, Grid3X3, List, X, BarChart3, CheckCircle, PlayCircle } from 'lucide-react';
 import { Modal } from '../components/Modal';
@@ -93,7 +93,7 @@ export const WatchHistoryPage: FC = () => {
   const confirmClearAll = () => {
     const allItems = getAllWatchProgress();
     setUndoStack(allItems);
-    localStorage.removeItem('vid_library_progress_v2');
+    clearWatchHistory();
     refresh();
     setShowClearModal(false);
   };

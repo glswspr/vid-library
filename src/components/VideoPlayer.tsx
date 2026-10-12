@@ -149,7 +149,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !document.fullscreenEnabled) return;
     if (!document.fullscreenElement) {
       el.requestFullscreen().catch(() => {});
     } else {
@@ -165,15 +165,18 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'f' || e.key === 'F') {
-        const target = e.target as HTMLElement | null;
-        const tag = target?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
-          return;
-        }
-        e.preventDefault();
-        toggleFullscreen();
+      if (e.key !== 'f' && e.key !== 'F') return;
+      // Ctrl/Cmd/Alt+F are browser shortcuts (e.g. Ctrl+F = find).
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
       }
+      // Don't hijack F while a modal / dropdown owns the screen.
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      e.preventDefault();
+      toggleFullscreen();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -193,6 +196,17 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   };
 
   const handleMessage = useCallback((event: MessageEvent) => {
+    // The embeds are third-party frames that also serve ads. Two guards keep
+    // those frames from writing forged entries into watch history or forcing
+    // provider switches:
+    //  1. the message must originate from the player iframe itself, and
+    //  2. the payload must match the documented PLAYER_EVENT protocol
+    //     (PROVIDERS.md) or the provider "content not found" error signal.
+    // The old code accepted any {timestamp|progress|duration|season|episode}
+    // object from any origin, which was unauthenticated write access.
+    const contentWindow = iframeRef.current?.contentWindow;
+    if (!contentWindow || event.source !== contentWindow) return;
+
     let data = event.data;
     if (typeof data === 'string') {
       try { data = JSON.parse(data); } catch { return; }
@@ -200,65 +214,56 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     if (!data || typeof data !== 'object') return;
 
     const payload = data as Record<string, unknown>;
+    // PLAYER_EVENT wraps its fields in `data`; the bare-shape variant
+    // (VidRock) posts them at the top level.
+    const pl = (typeof payload.data === 'object' && payload.data !== null
+      ? payload.data as Record<string, unknown>
+      : payload);
 
-    if (typeof payload.timestamp === 'number' || typeof payload.progress === 'number') {
-      const progress = (payload.timestamp as number) || 0;
-      const duration = (payload.duration as number) || 0;
-      if (progress > 0) {
-        saveWatchProgress({
-          id: media.id,
-          title: media.title,
-          type: media.type,
-          posterUrl: media.posterUrl,
-          seasonNumber: payload.season ? Number(payload.season) : season,
-          episodeNumber: payload.episode ? Number(payload.episode) : episode,
-          progress,
-          duration,
-          completed: false,
-          updatedAt: Date.now(),
-        });
-      }
-      return;
-    }
+    const num = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
 
-    if (data.type === 'PLAYER_EVENT' || payload.event === 'playing') {
-      const pl = (payload.data as Record<string, unknown>) || payload;
-      const progress = (pl.player_progress as number) || (pl.currentTime as number) || 0;
-      const duration = (pl.player_duration as number) || (pl.duration as number) || 0;
+    const rawProgress = num(pl.player_progress) ?? num(pl.currentTime) ?? num(pl.timestamp) ?? num(pl.progress);
+    const rawDuration = num(pl.player_duration) ?? num(pl.duration);
+    const status = typeof pl.player_status === 'string' ? pl.player_status : undefined;
 
-      if (progress > 0) {
-        saveWatchProgress({
-          id: media.id,
-          title: media.title,
-          type: media.type,
-          posterUrl: media.posterUrl,
-          seasonNumber: season,
-          episodeNumber: episode,
-          progress,
-          duration,
-          completed: pl.player_status === 'completed',
-          updatedAt: Date.now(),
-        });
-      }
-
-      if ((pl.player_status as string) === 'completed' || payload.ended) {
-        setEnded(true);
-        if (
-          settings.autoplayNext &&
-          onAutoNext &&
-          getProvider(providerId).getCapabilities().supportsAutoplayNext
-        ) {
-          setTimeout(() => onAutoNext(), 1500);
-        }
-      }
-      return;
-    }
-
-    if (
+    const isPlayerEvent = payload.type === 'PLAYER_EVENT' || payload.event === 'playing';
+    const isErrorSignal =
       payload.error === 'Content Not Found' ||
       payload.status === 404 ||
-      (typeof payload.message === 'string' && payload.message.includes('Content Not Found'))
-    ) {
+      (typeof payload.message === 'string' && payload.message.includes('Content Not Found'));
+    if (!isPlayerEvent && !isErrorSignal && rawProgress === null) return;
+
+    if (rawProgress !== null && rawProgress > 0) {
+      saveWatchProgress({
+        id: media.id,
+        title: media.title,
+        type: media.type,
+        posterUrl: media.posterUrl,
+        // Always attribute to the episode the user is watching, never to a
+        // season/episode number supplied by the untrusted payload.
+        seasonNumber: season,
+        episodeNumber: episode,
+        progress: rawProgress,
+        duration: rawDuration ?? 0,
+        completed: status === 'completed',
+        updatedAt: Date.now(),
+      });
+    }
+
+    if (status === 'completed' || payload.ended === true) {
+      setEnded(true);
+      if (
+        settings.autoplayNext &&
+        onAutoNext &&
+        getProvider(providerId).getCapabilities().supportsAutoplayNext
+      ) {
+        setTimeout(() => onAutoNext(), 1500);
+      }
+      return;
+    }
+
+    if (isErrorSignal) {
       recordServerFailure(providerId);
       const fallbackOrder = getProviderFallbackOrder();
       if (autoFallbackCountRef.current < fallbackOrder.length) {
@@ -288,19 +293,24 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   // First: resolve IMDB to TMDB asynchronously when needed
   useEffect(() => {
     let cancelled = false;
+    // A resolved id only belongs to the title it was resolved for — drop it
+    // when we navigate away, otherwise the next title would reuse this one's
+    // TMDB id and play the wrong video.
+    setResolvedTmdbId(null);
     // For providers that require numeric TMDB IDs, resolve IMDB ID to TMDB ID
     // if we only have an IMDB ID. This prevents "PDF file not found" errors
     // caused by passing IMDB IDs (tt1234567) to servers that expect numeric
     // TMDB IDs.
     if (TMDB_ID_PROVIDERS.includes(providerId)) {
-      if (media.imdbId && !media.tmdbId && !resolvedTmdbId) {
+      if (media.imdbId && !media.tmdbId) {
         ;(async () => {
           const tmdbId = await resolveImdbToTmdb(media.imdbId as string);
           if (!cancelled) setResolvedTmdbId(tmdbId);
         })();
       }
     }
-  }, [providerId, media.imdbId, media.tmdbId, resolvedTmdbId]);
+    return () => { cancelled = true; };
+  }, [providerId, media.id, media.imdbId, media.tmdbId]);
 
   // Second: generate the embed URL using the resolved TMDB ID
   useEffect(() => {
@@ -468,6 +478,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
               key={iframeKey}
               src={embedUrl}
               className="w-full h-full border-0"
+              title={`${getProvider(providerId).name} player for ${media.title}`}
               referrerPolicy="origin"
               allow="autoplay; fullscreen; encrypted-media"
               allowFullScreen

@@ -182,6 +182,11 @@ export function toggleWatchlist(
 
 let progressCache: Record<string, WatchProgress> | null = null;
 let progressFlushPending = false;
+// Only pages that actually MUTATE progress may write it back. Without this
+// flag, a read-only page (any home page that just renders Continue Watching)
+// re-persisted its empty cache on pagehide, silently destroying entries
+// written by another tab or before a reload.
+let progressDirty = false;
 
 function ensureProgressCache(): Record<string, WatchProgress> {
   if (progressCache === null) {
@@ -192,8 +197,9 @@ function ensureProgressCache(): Record<string, WatchProgress> {
 
 function writeProgressCacheNow(): void {
   progressFlushPending = false;
-  if (progressCache !== null) {
+  if (progressCache !== null && progressDirty) {
     writeJson(KEYS.PROGRESS, progressCache);
+    progressDirty = false;
   }
 }
 
@@ -215,7 +221,20 @@ function scheduleProgressFlush(): void {
 function mutateProgress(fn: (items: Record<string, WatchProgress>) => void): void {
   const items = ensureProgressCache();
   fn(items);
+  progressDirty = true;
   scheduleProgressFlush();
+  notifyProgressChanged();
+}
+
+/**
+ * Single source of truth for "watch history changed" notifications.
+ * Consumers (Continue Watching, Watch History, Watch Stats) listen for this
+ * event, so every write path through `mutateProgress` must emit it — including
+ * `clearWatchHistory`, which previously bypassed the in-memory cache entirely.
+ */
+function notifyProgressChanged(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event('watch-progress-updated'));
 }
 
 if (typeof window !== 'undefined') {
@@ -340,8 +359,10 @@ export function removeShowWatchProgress(id: string): void {
 
 export function clearWatchHistory(): void {
   progressCache = {};
+  progressDirty = true;
   writeProgressCacheNow();
   writeJson(KEYS.PROVIDER_MEMORY, {});
+  notifyProgressChanged();
 }
 
 /** Mark an episode as fully watched (completed=true, progress=duration). */

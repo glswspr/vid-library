@@ -1,5 +1,5 @@
 import { extractImdbId } from '../utils/imdb';
-import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY } from './config';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson, tmdbUrl } from './config';
 import type { SearchResult } from './search';
 
 /**
@@ -22,7 +22,7 @@ export function resolveDirectImdbId(input: string): SearchResult | null {
  * Uses haswbstatement search to find the entity by IMDb property P345.
  * Returns title, year, seasons count, and episode count.
  */
-export async function resolveImdbTitle(imdbId: string): Promise<{
+export async function resolveImdbTitle(imdbId: string, signal?: AbortSignal): Promise<{
   title: string;
   year?: string;
   seasonsCount?: number;
@@ -31,7 +31,7 @@ export async function resolveImdbTitle(imdbId: string): Promise<{
   try {
     // Step 1: find Wikidata entity by IMDb ID property
     const searchUrl = `https://www.wikidata.org/w/api.php?action=query&list=search&srsearch=haswbstatement:P345=${encodeURIComponent(imdbId)}&format=json&origin=*`;
-    const searchRes = await fetch(searchUrl);
+    const searchRes = await fetch(searchUrl, { signal });
     if (!searchRes.ok) return null;
     const searchData = await searchRes.json();
     const pages = searchData?.query?.search || [];
@@ -40,7 +40,7 @@ export async function resolveImdbTitle(imdbId: string): Promise<{
 
     // Step 2: get label, year, season count, episode count, and Wikipedia link
     const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=labels|claims|sitelinks&languages=en&format=json&origin=*`;
-    const claimsRes = await fetch(claimsUrl);
+    const claimsRes = await fetch(claimsUrl, { signal });
     if (!claimsRes.ok) return null;
     const claimsData = await claimsRes.json();
     const entity = claimsData?.entities?.[qid];
@@ -78,7 +78,7 @@ export async function resolveImdbTitle(imdbId: string): Promise<{
     if ((!seasonsCount || !episodesCount) && enwikiTitle) {
       try {
         const wpUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(enwikiTitle)}&prop=wikitext&format=json&origin=*`;
-        const wpRes = await fetch(wpUrl);
+        const wpRes = await fetch(wpUrl, { signal });
         if (wpRes.ok) {
           const wpData = await wpRes.json();
           const wikitext: string = wpData?.parse?.wikitext?.['*'] || '';
@@ -128,16 +128,17 @@ const TMDB_ID_CACHE_TTL = 24 * 60 * 60 * 1000;
  */
 export async function detectMediaType(
   imdbId: string,
+  signal?: AbortSignal,
 ): Promise<'movie' | 'tv' | null> {
   const keys = TMDB_API_KEY
     ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
     : [FALLBACK_TMDB_API_KEY];
+  const usable = keys.filter((k) => canUseTmdb(k));
+  if (usable.length === 0) return null;
 
-  for (const key of keys) {
+  for (const key of usable) {
     try {
-      const res = await fetch(
-        `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${key}&external_source=imdb_id`,
-      );
+      const res = await fetch(tmdbUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
       if (!res.ok) continue;
       const data: TmdbFindResult = await res.json();
       const hasMovie = (data.movie_results?.length ?? 0) > 0;
@@ -160,6 +161,7 @@ export async function detectMediaType(
 export async function resolveTmdbFromImdb(
   imdbId: string,
   type: 'movie' | 'tv',
+  signal?: AbortSignal,
 ): Promise<TmdbResolved | null> {
   const cacheKey = `${type}:${imdbId}`;
   const cached = tmdbIdCache.get(cacheKey);
@@ -168,12 +170,12 @@ export async function resolveTmdbFromImdb(
   const keys = TMDB_API_KEY
     ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
     : [FALLBACK_TMDB_API_KEY];
+  const usable = keys.filter((k) => canUseTmdb(k));
+  if (usable.length === 0) return null;
 
-  for (const key of keys) {
+  for (const key of usable) {
     try {
-      const res = await fetch(
-        `https://api.themoviedb.org/3/find/${encodeURIComponent(imdbId)}?api_key=${key}&external_source=imdb_id`,
-      );
+      const res = await fetch(tmdbUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
       if (!res.ok) continue;
       const data: TmdbFindResult = await res.json();
       const movie = data.movie_results?.[0];
@@ -456,18 +458,16 @@ async function fetchTmdbDetailsCached(
   if (cached && Date.now() - cached.at < TMDB_RATING_CACHE_TTL) return cached;
 
   const key = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!key) return null;
+  if (!canUseTmdb(key)) return null;
 
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${key}`,
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await tmdbFetchJson(`/${type}/${tmdbId}`, key) as
+      { vote_average?: number; genres?: { name: string }[] } | null;
+    if (!data) return null;
     const value: TmdbDetailsCached = {
       rating: data.vote_average ? data.vote_average.toFixed(1) : undefined,
       genre: Array.isArray(data.genres) && data.genres.length > 0
-        ? data.genres.map((g: { name: string }) => g.name).join(', ')
+        ? data.genres.map((g) => g.name).join(', ')
         : undefined,
       at: Date.now(),
     };

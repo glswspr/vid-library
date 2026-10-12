@@ -27,9 +27,14 @@ export const Navbar: FC = () => {
   const abortRef = useRef<AbortController | null>(null);
 
   const performSearch = useCallback(async (query: string) => {
+    // Cancel any in-flight request so a slower earlier keystroke can never
+    // overwrite a newer result, and mark it superseded.
     if (abortRef.current) {
       abortRef.current.abort();
     }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
 
     if (query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
       setResults([]);
@@ -48,7 +53,8 @@ export const Navbar: FC = () => {
         console.debug('[Navbar] Processing IMDB ID:', imdbId);
 
         // Try Wikidata first for rich metadata (title, year, seasonsCount)
-        const wikidataResult = await resolveImdbTitle(imdbId);
+        const wikidataResult = await resolveImdbTitle(imdbId, signal);
+        if (signal.aborted) return;
         console.debug('[Navbar] Wikidata result:', wikidataResult);
 
         // Determine type using multiple fallbacks:
@@ -61,7 +67,8 @@ export const Navbar: FC = () => {
           console.debug('[Navbar] Using Wikidata seasonsCount:', resolvedType);
         } else {
           try {
-            const tmdbType = await detectMediaType(imdbId);
+            const tmdbType = await detectMediaType(imdbId, signal);
+            if (signal.aborted) return;
             if (tmdbType === 'movie' || tmdbType === 'tv') {
               resolvedType = tmdbType;
               console.debug('[Navbar] Using TMDB detection:', resolvedType);
@@ -73,7 +80,8 @@ export const Navbar: FC = () => {
         console.debug('[Navbar] Final resolvedType:', resolvedType);
 
         // Get poster from TMDB using the determined type
-        const tmdbResolved = await resolveTmdbFromImdb(imdbId, resolvedType);
+        const tmdbResolved = await resolveTmdbFromImdb(imdbId, resolvedType, signal);
+        if (signal.aborted) return;
         const result: SearchResult = {
           imdbId,
           title: wikidataResult?.title || imdbId.toUpperCase(),
@@ -85,13 +93,17 @@ export const Navbar: FC = () => {
         };
         setResults([result]);
       } else {
-        const searchResults = await searchByTitle(query);
+        const searchResults = await searchByTitle(query, signal);
+        if (signal.aborted) return;
         setResults(searchResults);
       }
-    } catch {
+    } catch (e) {
+      // An aborted request is expected when a newer query arrives — leave the
+      // current results (or the newer query's results) in place.
+      if (signal.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
       setResults([]);
     } finally {
-      setIsSearching(false);
+      if (!signal.aborted) setIsSearching(false);
     }
   }, []);
 
@@ -180,7 +192,7 @@ export const Navbar: FC = () => {
 
   return (
     <header className="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
-      <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <nav aria-label="Main" className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         <Link to="/" className="flex items-center gap-2.5 shrink-0">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
             <Film className="w-5 h-5 text-white" />
@@ -260,7 +272,7 @@ export const Navbar: FC = () => {
           
           <SettingsMenu />
         </div>
-      </div>
+      </nav>
     </header>
   );
 };
