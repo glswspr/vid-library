@@ -6,12 +6,13 @@
  * keeps the real key in a server-side `TMDB_API_KEY` environment variable, so
  * it never reaches visitors, and gives us one place for caching.
  *
- * Usage from the client:  fetch('/api/tmdb/3/movie/603')
+ * The file name is a catch-all route: Vercel maps `/api/tmdb/<anything>` to it.
+ * Usage from the client:  fetch('/api/tmdb/movie/603')
  * The same handler backs the local dev server (see server/tmdbProxy.ts).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { proxyTmdb } from '../server/tmdbProxy.ts';
+import { proxyTmdb } from '../../server/tmdbProxy.ts';
 
 interface VercelRequest extends IncomingMessage {
   query?: Record<string, string | string[] | undefined>;
