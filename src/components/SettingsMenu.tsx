@@ -325,6 +325,9 @@ export const SettingsMenu: FC = () => {
               onChange={(e) => update({ accentColor: e.target.value })}
               className="mt-1 w-full h-10 bg-slate-800 border border-slate-700 rounded-lg cursor-pointer"
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Very dark colours are lightened so button text stays readable.
+            </p>
           </label>
 
           <button

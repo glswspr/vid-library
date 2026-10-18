@@ -12,12 +12,13 @@ import { useSpatialNav } from './hooks/useSpatialNav';
 import { useSettings } from './hooks/useSettings';
 import { OfflineBanner } from './components/OfflineBanner';
 import { scrollToVideoPlayer } from './utils/scroll';
+import { readableAccent } from './utils/accent';
 
 function AccentApplier() {
   const [settings] = useSettings();
   useEffect(() => {
     const root = document.documentElement;
-    const accent = settings.accentColor;
+    const accent = readableAccent(settings.accentColor);
     root.style.setProperty('--accent', accent);
     // Tailwind utilities resolve to `var(--color-cyan-*)`, so remapping that
     // scale is what makes the picker change the actual UI. Inline custom
