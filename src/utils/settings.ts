@@ -1,7 +1,6 @@
 import type { ProviderId } from '../types';
 import { GENRE_ROWS_MAX } from '../constants';
-import { getRememberedProvider, clearWatchHistory as clearWatchHistoryInStorage } from './storage';
-
+import { clearWatchHistory as clearWatchHistoryInStorage } from './storage';
 export interface AppSettings {
   defaultProvider: ProviderId;
   autoplayNext: boolean;
@@ -130,16 +129,16 @@ export function clearWatchHistory(): void {
   clearWatchHistoryInStorage();
 }
 
-/** Resolve the provider that should be used for a given media id.
- *  Priority: per-show pin > remembered (last successful) > default.
- *  The pin must win: `rememberProvider` runs on every successful iframe load,
- *  so a remembered value would otherwise shadow the user's choice. */
+/** Resolve the server a title should start on.
+ *  Priority: per-show pin > global default.
+ *  The remembered-per-title value is not consulted here: it is the automatic
+ *  "last server that worked" signal, and letting it win made the Default
+ *  server setting appear to do nothing for any title already played. It is
+ *  still used to order fallback candidates (see `getProviderFallbackOrder`). */
 export function resolveDefaultProvider(mediaId: string): ProviderId {
   const settings = readSettings();
   const pinned = settings.showDefaultProviders[mediaId]?.provider;
   if (pinned) return pinned;
-  const remembered = getRememberedProvider(mediaId);
-  if (remembered) return remembered;
   return settings.defaultProvider;
 }
 

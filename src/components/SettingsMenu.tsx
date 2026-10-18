@@ -140,7 +140,7 @@ export const SettingsMenu: FC = () => {
           <label className="block mb-4">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Default server</span>
             <p className="text-[11px] text-slate-500 mt-1 mb-2">
-              Used for a title until you pick another server while watching it.
+              Starting server for every title. Pin a server while watching a show to keep it for that show.
             </p>
             <select
               value={settings.defaultProvider}
