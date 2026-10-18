@@ -114,11 +114,6 @@ export function getProviderFallbackOrder(preferred: ProviderId[] = []): Provider
   return ordered;
 }
 
-export function getRememberedProvider(mediaId: string): ProviderId | null {
-  const memory = readProviderMemory();
-  return memory[mediaId] || null;
-}
-
 export function rememberProvider(mediaId: string, provider: ProviderId): void {
   const memory = readProviderMemory();
   memory[mediaId] = provider;
