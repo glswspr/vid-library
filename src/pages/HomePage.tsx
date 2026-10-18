@@ -233,7 +233,7 @@ export const HomePage: FC = () => {
 
         {/* Search results */}
         {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
-          <div className="mt-4" id="search-results" role="listbox">
+          <div className="mt-4" id="search-results">
             {searchError ? (
               <div className="flex items-center gap-3 px-5 py-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl text-base text-rose-400">
                 <AlertTriangle className="w-5 h-5 shrink-0" />

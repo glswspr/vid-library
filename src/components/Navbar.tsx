@@ -1,6 +1,6 @@
 import type { FC, ChangeEvent, KeyboardEvent } from 'react';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Film, Search, X, Loader2, Clock } from 'lucide-react';
 import { SettingsMenu } from '../components/SettingsMenu';
 import { WatchStats } from '../components/WatchStats';
@@ -14,7 +14,6 @@ export const FOCUS_SEARCH_EVENT = 'vdl:focus-search';
 
 export const Navbar: FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [searchText, setSearchText] = useState<string>('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -173,13 +172,8 @@ export const Navbar: FC = () => {
     return () => window.removeEventListener(FOCUS_SEARCH_EVENT, handleFocusSearch);
   }, []);
 
-  useEffect(() => {
-    const q = searchParams.get('q');
-    if (q) {
-      setSearchText(q);
-      performSearch(q);
-    }
-  }, [searchParams, performSearch]);
+  // The home page owns `?q=` deep links. Handling the same param here ran the
+  // query twice and rendered two result lists with the same DOM id.
 
   useEffect(() => {
     const debounce = debounceRef;
@@ -231,6 +225,8 @@ export const Navbar: FC = () => {
               placeholder="Search..."
               className="w-56 bg-slate-800 border-2 border-slate-700 focus:border-cyan-400 rounded-xl pl-10 pr-10 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
               aria-label="Search movies and TV shows"
+              aria-controls="navbar-search-results"
+              aria-expanded={results.length > 0}
             />
             
             {searchText && (
@@ -244,7 +240,7 @@ export const Navbar: FC = () => {
             )}
             
             {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
-              <div className="absolute left-0 right-0 mt-2" id="search-results" role="listbox">
+              <div className="absolute left-0 right-0 mt-2" id="navbar-search-results">
                 {results.length > 0 ? (
                   <SearchResults
                     results={results}
