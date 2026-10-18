@@ -3,7 +3,6 @@ import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { getProvider } from '../providers';
 import {
-  setPreferredProvider,
   getProviderFallbackOrder,
   rememberProvider,
   saveWatchProgress,
@@ -149,7 +148,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   const handleProviderChange = useCallback((newProvider: ProviderId, rememberForShow = true) => {
     manualOverrideRef.current = true;
     setProviderId(newProvider);
-    setPreferredProvider(newProvider);
     // Keep an existing pin pointing at the server the user just chose.
     if (rememberForShow && pinned) {
       setShowDefaultProvider(media.id, newProvider, media.title);
@@ -532,7 +530,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
                 onLoad={() => {
                   setIsIframeLoaded(true);
                   rememberProvider(media.id, providerId);
-                  setPreferredProvider(providerId);
                   recordServerSuccess(providerId);
                 }}
                 onError={() => {

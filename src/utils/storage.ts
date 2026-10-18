@@ -21,16 +21,7 @@ function writeJson<T>(key: string, value: T): void {
   }
 }
 
-function readRaw(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
 const KEYS = {
-  PROVIDER: 'vid_library_provider',
   PROGRESS: 'vid_library_progress_v2',
   WATCHLIST: 'vid_library_watchlist_v1',
   PROVIDER_MEMORY: 'vid_library_provider_memory_v1',
@@ -87,18 +78,8 @@ function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (VALID_PROVIDERS as string[]).includes(value);
 }
 
-export function getPreferredProvider(): ProviderId {
-  const saved = readRaw(KEYS.PROVIDER);
-  if (isProviderId(saved)) return saved;
-  return 'vidrock';
-}
-
-export function setPreferredProvider(provider: ProviderId): void {
-  writeJson(KEYS.PROVIDER, provider);
-}
-
-// Remembers which embed server last worked for a given title so we can
-// auto-start on the reliable server and skip dead ones on fallback.
+// Remembers which embed server last worked for a given title so automatic
+// fallback can try reliable servers first.
 // (A client can't probe embed domains directly due to CORS, so we use the
 // iframe's onLoad as a lightweight reachability signal instead.)
 
