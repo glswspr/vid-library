@@ -41,13 +41,13 @@ export const MediaCard = memo(function MediaCard({ item }: MediaCardProps) {
 
   return (
     // The bookmark button is a sibling of the link, not a child: a button
-    // inside an anchor is invalid HTML and gives keyboard users two controls
-    // in one tab stop. The overlay div matches the poster box so the button
-    // still sits where it looks like it belongs.
+    // inside an anchor is invalid HTML and click-through handling gets murky.
+    // The overlay div matches the poster box so the button still sits where
+    // it looks like it belongs.
     <div className="group relative">
       <Link
         to={targetUrl}
-        className="relative bg-slate-800/40 rounded-xl overflow-hidden border border-slate-700/50 hover:border-cyan-500/60 group-focus-visible:border-cyan-500/80 transition-all duration-300 flex flex-col hover:-translate-y-1 group-focus-visible:-translate-y-1 hover:shadow-[0_8px_30px_rgba(6,182,212,0.25)] group-focus-visible:shadow-[0_8px_30px_rgba(6,182,212,0.25)]"
+        className="relative bg-slate-800/40 rounded-xl overflow-hidden border border-slate-700/50 hover:border-cyan-500/60 focus-visible:border-cyan-500/80 transition-all duration-300 flex flex-col hover:-translate-y-1 focus-visible:-translate-y-1 hover:shadow-[0_8px_30px_rgba(6,182,212,0.25)] focus-visible:shadow-[0_8px_30px_rgba(6,182,212,0.25)]"
       >
         <div className="aspect-[2/3] w-full relative bg-slate-800 overflow-hidden">
           {item.posterUrl ? (
@@ -63,8 +63,8 @@ export const MediaCard = memo(function MediaCard({ item }: MediaCardProps) {
             </div>
           )}
 
-          <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center transform scale-75 group-hover:scale-100 group-focus-visible:scale-100 transition-transform duration-300 shadow-lg shadow-cyan-500/50">
+          <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center transform scale-75 group-hover:scale-100 group-focus-within:scale-100 transition-transform duration-300 shadow-lg shadow-cyan-500/50">
               <Play className="w-6 h-6 fill-current translate-x-0.5" />
             </div>
           </div>
@@ -87,7 +87,7 @@ export const MediaCard = memo(function MediaCard({ item }: MediaCardProps) {
 
         <div className="p-3 flex flex-col justify-between flex-1">
           <div>
-            <h3 className="font-semibold text-slate-200 text-sm line-clamp-1 group-hover:text-cyan-400 group-focus-visible:text-cyan-400 transition-colors">
+            <h3 className="font-semibold text-slate-200 text-sm line-clamp-1 group-hover:text-cyan-400 group-focus-within:text-cyan-400 transition-colors">
               {item.title}
             </h3>
             <p className="text-xs text-slate-400 mt-0.5 flex items-center justify-between">
@@ -113,7 +113,7 @@ export const MediaCard = memo(function MediaCard({ item }: MediaCardProps) {
             shadow-lg shadow-black/40 transition-all duration-200 cursor-pointer
             ${inList
               ? 'bg-cyan-500 border-cyan-400 text-slate-950 opacity-100'
-              : 'bg-black/70 border-white/30 text-white hover:bg-black hover:border-cyan-400 hover:text-cyan-300 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
+              : 'bg-black/70 border-white/30 text-white hover:bg-black hover:border-cyan-400 hover:text-cyan-300 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
             }
           `}
         >

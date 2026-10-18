@@ -315,7 +315,7 @@ export const ContinueWatching: FC = () => {
                   </Link>
 
                   {/* Sibling of the link: a button inside an anchor is invalid
-                      HTML and adds a second tab stop to the card. */}
+                      HTML and makes click-through handling unreliable. */}
                   <div className="absolute inset-x-0 top-0 aspect-video pointer-events-none">
                     <button
                       type="button"

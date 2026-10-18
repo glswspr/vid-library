@@ -562,7 +562,7 @@ export const WatchHistoryPage: FC = () => {
                     </Link>
 
                     {/* Sibling of the link: a button inside an anchor is
-                        invalid HTML and adds a second tab stop per card. */}
+                        invalid HTML and makes click-through handling unreliable. */}
                     <div className="absolute inset-x-0 top-0 aspect-[2/3] pointer-events-none">
                       {renderRemoveButton(item, (e) => {
                         e.preventDefault();

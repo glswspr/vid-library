@@ -178,7 +178,7 @@ export function setShowDefaultProvider(
   return next;
 }
 
-/** Remove a per-show pin, falling back to the remembered/global server. */
+/** Remove a per-show pin, falling back to the global default. */
 export function removeShowDefaultProvider(mediaId: string): AppSettings {
   const next = readSettings();
   if (!next.showDefaultProviders[mediaId]) return next;

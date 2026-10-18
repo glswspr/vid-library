@@ -2,8 +2,8 @@
  * Shared TMDB proxy logic.
  *
  * Implemented once and used by both the dev server (Vite plugin middleware)
- * and the production Vercel function (api/tmdb.ts), so the two paths cannot
- * drift apart.
+ * and the production Vercel function (api/tmdb/[...path].ts), so the two paths
+ * cannot drift apart.
  *
  * The TMDB key is read from the *server* environment (TMDB_API_KEY) and never
  * from a VITE_-prefixed variable, so it is not inlined into the client bundle.

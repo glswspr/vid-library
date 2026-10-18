@@ -9,7 +9,7 @@ export const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY || '';
  * Fallback TMDB key that ships inside VidRock's public player bundle.
  * NOTE: any key used from the browser is public by construction — Vite inlines
  * `VITE_`-prefixed variables into the built JS. Prefer the server-side proxy
- * (see `api/tmdb.ts`), which keeps a real key out of the bundle entirely.
+ * (see `api/tmdb/[...path].ts`), which keeps a real key out of the bundle entirely.
  */
 export const FALLBACK_TMDB_API_KEY = import.meta.env.VITE_FALLBACK_TMDB_API_KEY || '54e00466a09676df57ba51c4ca30b1a6';
 
@@ -17,7 +17,7 @@ export const TMDB_BASE = 'https://api.themoviedb.org/3';
 
 /**
  * True when the server-side TMDB proxy is reachable for this deployment.
- * The proxy (api/tmdb.ts, Vercel) holds the key server-side; static hosts
+ * The proxy (api/tmdb/[...path].ts, Vercel) holds the key server-side; static hosts
  * such as Surge have no server, so they must use the direct client path.
  *
  * Opt out with VITE_TMDB_PROXY=false for a static-only build.

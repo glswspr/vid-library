@@ -13,7 +13,6 @@ import {
 import { useSettings } from '../hooks/useSettings';
 import {
   resolveDefaultProvider,
-  getShowDefaultProvider,
   setShowDefaultProvider,
   removeShowDefaultProvider,
 } from '../utils/settings';
@@ -67,7 +66,9 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   const [ended, setEnded] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [reloadNonce, setReloadNonce] = useState<number>(0);
-  const [pinned, setPinned] = useState<boolean>(() => getShowDefaultProvider(media.id) !== null);
+  // Derived from settings rather than mirrored in state: resetting a pin in
+  // Settings must clear it here too, and `useSettings` re-reads on change.
+  const pinned = Boolean(settings.showDefaultProviders[media.id]);
 
   const [containerWidth, setContainerWidth] = useState<string>('100%');
   const [containerHeight, setContainerHeight] = useState<string>('');
@@ -138,7 +139,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
     if (overrideForIdRef.current !== media.id) {
       overrideForIdRef.current = media.id;
       manualOverrideRef.current = false;
-      setPinned(getShowDefaultProvider(media.id) !== null);
     }
     if (!manualOverrideRef.current) {
       setProviderId(resolveDefaultProvider(media.id));
@@ -160,11 +160,9 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   const togglePin = useCallback(() => {
     if (pinned) {
       removeShowDefaultProvider(media.id);
-      setPinned(false);
       return;
     }
     setShowDefaultProvider(media.id, providerId, media.title);
-    setPinned(true);
   }, [pinned, media.id, media.title, providerId]);
 
   const toggleFullscreen = useCallback(() => {

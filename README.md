@@ -24,7 +24,7 @@ A clean, lightweight, publicly accessible web application for browsing movies an
 ## Local Development Setup
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) `^20.19` or `>=22.12` (the floor Vite 8 requires)
+- [Node.js](https://nodejs.org/) `^22.22` or `>=24.15` (the floor the test tooling requires)
 - `npm` (comes with Node.js)
 
 ### Steps

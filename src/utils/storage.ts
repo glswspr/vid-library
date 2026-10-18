@@ -92,26 +92,13 @@ function readProviderMemory(): Record<string, ProviderId> {
   return out;
 }
 
-/** Best-guess server order: the user's preferred list first, then servers that
- *  worked for a title before, then the canonical list. */
+/** Server order: exactly the user's list. The full list is used only when the
+ *  user has removed every server, so there is still something to try.
+ *  The arrows, the fallback chain and the "Server N" label all read this, so
+ *  they can never disagree with Settings. */
 export function getProviderFallbackOrder(preferred: ProviderId[] = []): ProviderId[] {
-  const ordered: ProviderId[] = [];
-  const seen = new Set<ProviderId>();
-  const add = (id: ProviderId) => {
-    if (seen.has(id)) return;
-    ordered.push(id);
-    seen.add(id);
-  };
-  for (const id of preferred) {
-    if (isProviderId(id)) add(id);
-  }
-  for (const value of Object.values(readProviderMemory())) {
-    add(value);
-  }
-  for (const id of VALID_PROVIDERS) {
-    add(id);
-  }
-  return ordered;
+  const chosen = preferred.filter((id) => isProviderId(id));
+  return chosen.length > 0 ? chosen : [...VALID_PROVIDERS];
 }
 
 export function rememberProvider(mediaId: string, provider: ProviderId): void {
