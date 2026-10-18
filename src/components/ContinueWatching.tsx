@@ -270,10 +270,10 @@ export const ContinueWatching: FC = () => {
 
             if (!showNextEpisodeCard) {
               cards.push(
-                <div key={`cw_${item.id}_${item.seasonNumber}_${item.episodeNumber}`} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0 snap-start">
+                <div key={`cw_${item.id}_${item.seasonNumber}_${item.episodeNumber}`} className="group relative w-36 sm:w-40 md:w-44 lg:w-48 shrink-0 snap-start">
                   <Link
                     to={targetUrl}
-                    className="group relative bg-slate-800/40 rounded-xl overflow-hidden border-2 border-slate-700/50 hover:border-cyan-500/50 transition-all flex flex-col"
+                    className="relative bg-slate-800/40 rounded-xl overflow-hidden border-2 border-slate-700/50 hover:border-cyan-500/50 transition-all flex flex-col"
                   >
                     <div className="aspect-video w-full bg-slate-900 relative overflow-hidden">
                       {item.posterUrl ? (
@@ -294,26 +294,6 @@ export const ContinueWatching: FC = () => {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={handleRemove}
-                        aria-label={`Remove ${item.title} from Continue Watching`}
-                        className="
-                          absolute top-1.5 right-1.5 z-20
-                          flex items-center justify-center
-                          w-7 h-7 rounded-lg
-                          bg-black/70 border border-white/30
-                          text-white
-                          opacity-0 group-hover:opacity-100
-                          hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
-                          backdrop-blur-md
-                          transition-all duration-200 cursor-pointer
-                          shadow-lg shadow-black/40
-                        "
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-
                       <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-slate-800">
                         <div
                           className="h-full bg-cyan-400"
@@ -333,6 +313,31 @@ export const ContinueWatching: FC = () => {
                       </p>
                     </div>
                   </Link>
+
+                  {/* Sibling of the link: a button inside an anchor is invalid
+                      HTML and adds a second tab stop to the card. */}
+                  <div className="absolute inset-x-0 top-0 aspect-video pointer-events-none">
+                    <button
+                      type="button"
+                      onClick={handleRemove}
+                      aria-label={`Remove ${item.title} from Continue Watching`}
+                      className="
+                        pointer-events-auto
+                        absolute top-1.5 right-1.5 z-20
+                        flex items-center justify-center
+                        w-7 h-7 rounded-lg
+                        bg-black/70 border border-white/30
+                        text-white
+                        opacity-0 group-hover:opacity-100
+                        hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
+                        backdrop-blur-md
+                        transition-all duration-200 cursor-pointer
+                        shadow-lg shadow-black/40
+                      "
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>,
               );
             }
@@ -343,10 +348,10 @@ export const ContinueWatching: FC = () => {
               const nextEp = item.nextEpisode;
               const nextUrl = `/tv/${item.id}/season/${nextEp.seasonNumber}/episode/${nextEp.episodeNumber}`;
               cards.push(
-                <div key={`cw_next_${item.id}_${nextEp.seasonNumber}_${nextEp.episodeNumber}`} className="w-36 sm:w-40 md:w-44 lg:w-48 shrink-0 snap-start">
+                <div key={`cw_next_${item.id}_${nextEp.seasonNumber}_${nextEp.episodeNumber}`} className="group relative w-36 sm:w-40 md:w-44 lg:w-48 shrink-0 snap-start">
                   <Link
                     to={nextUrl}
-                    className="group relative bg-slate-800/40 rounded-xl overflow-hidden border-2 border-cyan-500/50 hover:border-cyan-400 transition-all flex flex-col"
+                    className="relative bg-slate-800/40 rounded-xl overflow-hidden border-2 border-cyan-500/50 hover:border-cyan-400 transition-all flex flex-col"
                   >
                     <div className="aspect-video w-full bg-slate-900 relative overflow-hidden flex items-center justify-center">
                       {item.posterUrl ? (
@@ -367,26 +372,6 @@ export const ContinueWatching: FC = () => {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={handleRemove}
-                        aria-label={`Remove ${item.title} from Continue Watching`}
-                        className="
-                          absolute top-1.5 right-1.5 z-20
-                          flex items-center justify-center
-                          w-7 h-7 rounded-lg
-                          bg-black/70 border border-white/30
-                          text-white
-                          opacity-0 group-hover:opacity-100
-                          hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
-                          backdrop-blur-md
-                          transition-all duration-200 cursor-pointer
-                          shadow-lg shadow-black/40
-                        "
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-
                       <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-cyan-500/20 border border-cyan-500/40 rounded text-[9px] font-semibold text-cyan-300 uppercase tracking-wider">
                         Next
                       </div>
@@ -406,6 +391,29 @@ export const ContinueWatching: FC = () => {
                       </p>
                     </div>
                   </Link>
+
+                  <div className="absolute inset-x-0 top-0 aspect-video pointer-events-none">
+                    <button
+                      type="button"
+                      onClick={handleRemove}
+                      aria-label={`Remove ${item.title} from Continue Watching`}
+                      className="
+                        pointer-events-auto
+                        absolute top-1.5 right-1.5 z-20
+                        flex items-center justify-center
+                        w-7 h-7 rounded-lg
+                        bg-black/70 border border-white/30
+                        text-white
+                        opacity-0 group-hover:opacity-100
+                        hover:bg-rose-500 hover:border-rose-400 hover:text-white hover:scale-110
+                        backdrop-blur-md
+                        transition-all duration-200 cursor-pointer
+                        shadow-lg shadow-black/40
+                      "
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>,
               );
             }
