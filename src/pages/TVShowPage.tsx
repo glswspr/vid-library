@@ -11,6 +11,7 @@ import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, 
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
+import { parsePositiveInt } from '../utils/params';
 import ExpandableText from '../components/ExpandableText';
 
 const formatAirDate = (dateStr: string): string => {
@@ -28,8 +29,8 @@ export const TVShowPage: FC = () => {
 
   const navigate = useNavigate();
 
-  const currentSeason = seasonParam ? parseInt(seasonParam, 10) : 1;
-  const currentEpisode = episodeParam ? parseInt(episodeParam, 10) : 1;
+  const currentSeason = parsePositiveInt(seasonParam, 1);
+  const currentEpisode = parsePositiveInt(episodeParam, 1);
 
   const [show, setShow] = useState<TVShowDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
