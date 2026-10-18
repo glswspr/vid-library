@@ -3,7 +3,6 @@ import type { FC } from 'react';
 import type { MediaItem } from '../types';
 import { getProvider } from '../providers';
 import {
-  setPreferredProvider,
   getProviderFallbackOrder,
   rememberProvider,
   saveWatchProgress,
@@ -12,11 +11,15 @@ import {
   recordServerFailure,
 } from '../utils/storage';
 import { useSettings } from '../hooks/useSettings';
-import { resolveDefaultProvider } from '../utils/settings';
-import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair } from 'lucide-react';
+import {
+  resolveDefaultProvider,
+  setShowDefaultProvider,
+  removeShowDefaultProvider,
+} from '../utils/settings';
+import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair, Pin } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
-import { resolveImdbToTmdb } from '../utils/tv';
+import { resolveTmdbFromImdb } from '../services/metadata';
 import { scrollToElement } from '../utils/scroll';
 import EndOfContentOverlay from './EndOfContentOverlay';
 
@@ -24,21 +27,10 @@ interface VideoPlayerProps {
   media: MediaItem;
   season?: number;
   episode?: number;
+  /** True when a further episode exists, so the end card offers "Next episode". */
+  hasNextEpisode?: boolean;
   onAutoNext?: () => void;
 }
-
-const SERVER_BUTTONS: readonly { label: string; provider: ProviderId }[] = [
-  { label: 'Server 1', provider: 'vidrock' },
-  { label: 'Server 2', provider: 'vidapi' },
-  { label: 'Server 3', provider: 'videasy' },
-  { label: 'Server 4', provider: 'peachify' },
-  { label: 'Server 5', provider: 'vidsrc' },
-  { label: 'Server 6', provider: 'vidcore' },
-  { label: 'Server 7', provider: 'vidzee' },
-  { label: 'Server 8', provider: 'mapple' },
-  { label: 'Server 9', provider: 'm111' },
-  { label: 'Server 10', provider: 'streamx' },
-];
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
   videasy: 'Videasy',
@@ -66,13 +58,17 @@ const TMDB_ID_PROVIDERS: readonly ProviderId[] = [
   'streamx',
 ];
 
-export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAutoNext }) => {
+export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasNextEpisode, onAutoNext }) => {
   const [settings] = useSettings();
   const [providerId, setProviderId] = useState<ProviderId>(() => resolveDefaultProvider(media.id));
   const [hasError, setHasError] = useState<boolean>(false);
   const [isIframeLoaded, setIsIframeLoaded] = useState<boolean>(false);
   const [ended, setEnded] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [reloadNonce, setReloadNonce] = useState<number>(0);
+  // Derived from settings rather than mirrored in state: resetting a pin in
+  // Settings must clear it here too, and `useSettings` re-reads on change.
+  const pinned = Boolean(settings.showDefaultProviders[media.id]);
 
   const [containerWidth, setContainerWidth] = useState<string>('100%');
   const [containerHeight, setContainerHeight] = useState<string>('');
@@ -124,28 +120,50 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const manualOverrideRef = useRef(false);
+  const overrideForIdRef = useRef<string>(media.id);
   const autoFallbackCountRef = useRef(0);
-  const currentServer =
-    SERVER_BUTTONS.find((b) => b.provider === providerId) ?? SERVER_BUTTONS[0];
+  // The server arrows walk the user's order, so the label and the arrows can
+  // never disagree with Settings.
+  const serverOrder = getProviderFallbackOrder(settings.preferredProviders);
+  const currentServerIndex = Math.max(0, serverOrder.indexOf(providerId));
+  const currentServerLabel = `Server ${currentServerIndex + 1}`;
 
   useEffect(() => {
     setHasError(false);
     setIsIframeLoaded(false);
     setEnded(false);
     autoFallbackCountRef.current = 0;
+    // A manual server choice belongs to one title. Moving to another title has
+    // to start from that title's own default, or a per-show pin could never
+    // take effect.
+    if (overrideForIdRef.current !== media.id) {
+      overrideForIdRef.current = media.id;
+      manualOverrideRef.current = false;
+    }
     if (!manualOverrideRef.current) {
       setProviderId(resolveDefaultProvider(media.id));
     }
   }, [media.id, media.tmdbId, season, episode]);
 
-  const handleProviderChange = useCallback((newProvider: ProviderId) => {
+  const handleProviderChange = useCallback((newProvider: ProviderId, rememberForShow = true) => {
     manualOverrideRef.current = true;
     setProviderId(newProvider);
-    setPreferredProvider(newProvider);
+    // Keep an existing pin pointing at the server the user just chose.
+    if (rememberForShow && pinned) {
+      setShowDefaultProvider(media.id, newProvider, media.title);
+    }
     setHasError(false);
     setIsIframeLoaded(false);
     setEnded(false);
-  }, []);
+  }, [media.id, media.title, pinned]);
+
+  const togglePin = useCallback(() => {
+    if (pinned) {
+      removeShowDefaultProvider(media.id);
+      return;
+    }
+    setShowDefaultProvider(media.id, providerId, media.title);
+  }, [pinned, media.id, media.title, providerId]);
 
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current;
@@ -189,10 +207,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   }, []);
 
   const cycleServer = (dir: 1 | -1) => {
-    const idx = SERVER_BUTTONS.findIndex((b) => b.provider === providerId);
-    const next = SERVER_BUTTONS[(idx + dir + SERVER_BUTTONS.length) % SERVER_BUTTONS.length];
+    const idx = serverOrder.indexOf(providerId);
+    const next = serverOrder[(idx + dir + serverOrder.length) % serverOrder.length];
     autoFallbackCountRef.current = 0;
-    handleProviderChange(next.provider);
+    handleProviderChange(next);
   };
 
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -253,11 +271,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
     if (status === 'completed' || payload.ended === true) {
       setEnded(true);
-      if (
-        settings.autoplayNext &&
-        onAutoNext &&
-        getProvider(providerId).getCapabilities().supportsAutoplayNext
-      ) {
+      // Navigation happens on this page, not inside the embed, so the
+      // provider's "autoplay next" capability (false for every provider)
+      // must not gate it — otherwise the setting could never work.
+      if (settings.autoplayNext && onAutoNext) {
         setTimeout(() => onAutoNext(), 1500);
       }
       return;
@@ -265,26 +282,28 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
 
     if (isErrorSignal) {
       recordServerFailure(providerId);
-      const fallbackOrder = getProviderFallbackOrder();
+      const fallbackOrder = getProviderFallbackOrder(settings.preferredProviders);
       if (autoFallbackCountRef.current < fallbackOrder.length) {
         autoFallbackCountRef.current += 1;
         const current = fallbackOrder.indexOf(providerId);
         const next = fallbackOrder[(current + 1) % fallbackOrder.length];
         if (next !== providerId) {
-          handleProviderChange(next);
+          // Automatic fallback is not a user choice — never persist it as
+          // this show's default server.
+          handleProviderChange(next, false);
           return;
         }
       }
       setHasError(true);
     }
-  }, [media, season, episode, providerId, handleProviderChange, settings.autoplayNext, onAutoNext]);
+  }, [media, season, episode, providerId, handleProviderChange, settings.autoplayNext, settings.preferredProviders, onAutoNext]);
 
   useEffect(() => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [handleMessage]);
 
-  const iframeKey = `${providerId}|${media.id}|${season}|${episode}`;
+  const iframeKey = `${providerId}|${media.id}|${season}|${episode}|${reloadNonce}`;
   const [embedUrl, setEmbedUrl] = useState<string>('');
   // Track the resolved TMDB ID separately so the async resolution
   // doesn't cause re-render loops, and we can use the resolved ID
@@ -303,14 +322,18 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
     // TMDB IDs.
     if (TMDB_ID_PROVIDERS.includes(providerId)) {
       if (media.imdbId && !media.tmdbId) {
+        const imdbId = media.imdbId;
         ;(async () => {
-          const tmdbId = await resolveImdbToTmdb(media.imdbId as string);
-          if (!cancelled) setResolvedTmdbId(tmdbId);
+          // Cached resolver shared with the rest of the app. It needs the
+          // media type: the old helper always preferred the show bucket, so a
+          // movie could resolve to a same-numbered show.
+          const resolved = await resolveTmdbFromImdb(imdbId, media.type);
+          if (!cancelled) setResolvedTmdbId(resolved?.id ?? null);
         })();
       }
     }
     return () => { cancelled = true; };
-  }, [providerId, media.id, media.imdbId, media.tmdbId]);
+  }, [providerId, media.id, media.imdbId, media.tmdbId, media.type]);
 
   // Second: generate the embed URL using the resolved TMDB ID
   useEffect(() => {
@@ -342,7 +365,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
       setEmbedUrl(result);
     }
     return () => { cancelled = true; };
-  }, [providerId, media.imdbId, media.tmdbId, resolvedTmdbId, media.type, season, episode]);
+  }, [providerId, media.id, media.imdbId, media.tmdbId, resolvedTmdbId, media.type, season, episode]);
 
   useEffect(() => {
     if (!isIframeLoaded) {
@@ -354,6 +377,9 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
   const handleReplay = useCallback(() => {
     setEnded(false);
     setIsIframeLoaded(false);
+    // The embed owns playback state, so replay must remount the iframe —
+    // clearing `ended` alone leaves the finished video on screen.
+    setReloadNonce((n) => n + 1);
   }, []);
 
   return (
@@ -391,9 +417,24 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
         </button>
 
         <div className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-bold text-sm">
-          <span>{currentServer.label}</span>
-          <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[currentServer.provider]}</span>
+          <span>{currentServerLabel}</span>
+          <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[providerId]}</span>
         </div>
+
+        <button
+          type="button"
+          onClick={togglePin}
+          aria-label={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
+          aria-pressed={pinned}
+          title={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
+          className={`w-10 h-11 shrink-0 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
+            pinned
+              ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
+              : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
+          }`}
+        >
+          {pinned ? <Pin className="w-4 h-4 fill-current" /> : <Pin className="w-4 h-4" />}
+        </button>
 
         <button
           type="button"
@@ -435,7 +476,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
               <button
                 type="button"
                 onClick={() => {
-                  const fallbackOrder = getProviderFallbackOrder();
+                  const fallbackOrder = getProviderFallbackOrder(settings.preferredProviders);
                   const current = fallbackOrder.indexOf(providerId);
                   handleProviderChange(fallbackOrder[(current + 1) % fallbackOrder.length]);
                 }}
@@ -445,7 +486,11 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
               </button>
               <button
                 type="button"
-                onClick={() => setHasError(false)}
+                onClick={() => {
+                  setHasError(false);
+                  setIsIframeLoaded(false);
+                  setReloadNonce((n) => n + 1);
+                }}
                 className="px-5 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold text-sm cursor-pointer"
               >
                 Retry
@@ -454,7 +499,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
           </div>
         ) : (
           <>
-            {!isIframeLoaded && (
+            {(!isIframeLoaded || !embedUrl) && (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
                 <div className="flex items-center gap-2 text-slate-400 text-sm">
                   <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
@@ -466,43 +511,45 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, onAu
             {ended && (
               <EndOfContentOverlay
                 mediaType={media.type}
-                nextSeason={season}
-                nextEpisode={episode}
+                canGoNext={!!hasNextEpisode}
                 onReplay={handleReplay}
                 onNext={onAutoNext}
               />
             )}
 
-            <iframe
-              ref={iframeRef}
-              key={iframeKey}
-              src={embedUrl}
-              className="w-full h-full border-0"
-              title={`${getProvider(providerId).name} player for ${media.title}`}
-              referrerPolicy="origin"
-              allow="autoplay; fullscreen; encrypted-media"
-              allowFullScreen
-              onLoad={() => {
-                setIsIframeLoaded(true);
-                rememberProvider(media.id, providerId);
-                setPreferredProvider(providerId);
-                recordServerSuccess(providerId);
-              }}
-              onError={() => {
-                recordServerFailure(providerId);
-                const fallbackOrder = getProviderFallbackOrder();
-                if (fallbackOrder.length > 1) {
-                  const current = fallbackOrder.indexOf(providerId);
-                  const next = fallbackOrder[(current + 1) % fallbackOrder.length];
-                  if (next !== providerId && autoFallbackCountRef.current < fallbackOrder.length) {
-                    autoFallbackCountRef.current += 1;
-                    handleProviderChange(next);
-                    return;
+            {/* No iframe until the URL exists: `src=""` makes the browser
+                re-request the current page. The spinner covers the gap. */}
+            {embedUrl && (
+              <iframe
+                ref={iframeRef}
+                key={iframeKey}
+                src={embedUrl}
+                className="w-full h-full border-0"
+                title={`${getProvider(providerId).name} player for ${media.title}`}
+                referrerPolicy="origin"
+                allow="autoplay; fullscreen; encrypted-media"
+                allowFullScreen
+                onLoad={() => {
+                  setIsIframeLoaded(true);
+                  rememberProvider(media.id, providerId);
+                  recordServerSuccess(providerId);
+                }}
+                onError={() => {
+                  recordServerFailure(providerId);
+                  const fallbackOrder = getProviderFallbackOrder(settings.preferredProviders);
+                  if (fallbackOrder.length > 1) {
+                    const current = fallbackOrder.indexOf(providerId);
+                    const next = fallbackOrder[(current + 1) % fallbackOrder.length];
+                    if (next !== providerId && autoFallbackCountRef.current < fallbackOrder.length) {
+                      autoFallbackCountRef.current += 1;
+                      handleProviderChange(next, false);
+                      return;
+                    }
                   }
-                }
-                setHasError(true);
-              }}
-            />
+                  setHasError(true);
+                }}
+              />
+            )}
           </>
         )}
       </div>

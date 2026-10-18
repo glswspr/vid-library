@@ -7,10 +7,11 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
 import { ArrowLeft, ChevronLeft, ChevronRight, Tv, Check, Bookmark, BookmarkCheck, Play, Eye, EyeOff, Calendar } from 'lucide-react';
-import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow } from '../utils/storage';
+import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow, updateProgressTitle } from '../utils/storage';
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
+import { parsePositiveInt } from '../utils/params';
 import ExpandableText from '../components/ExpandableText';
 
 const formatAirDate = (dateStr: string): string => {
@@ -28,8 +29,8 @@ export const TVShowPage: FC = () => {
 
   const navigate = useNavigate();
 
-  const currentSeason = seasonParam ? parseInt(seasonParam, 10) : 1;
-  const currentEpisode = episodeParam ? parseInt(episodeParam, 10) : 1;
+  const currentSeason = parsePositiveInt(seasonParam, 1);
+  const currentEpisode = parsePositiveInt(episodeParam, 1);
 
   const [show, setShow] = useState<TVShowDetails | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -244,6 +245,9 @@ export const TVShowPage: FC = () => {
       setShow(data);
       setLoading(false);
       if (data.genre) updateProgressGenreForShow(data.id, data.genre);
+      if (data.title && data.title !== data.id) {
+        updateProgressTitle(data.id, data.title);
+      }
     }).catch(() => {
       setLoading(false);
     });
@@ -265,19 +269,10 @@ export const TVShowPage: FC = () => {
           goNext: handleNextEpisode, goPrev: handlePrevEpisode } =
     useEpisodeNavigation(show, currentSeason, currentEpisode, navigate);
 
-  useEffect(() => {
-    if (!show || !id) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (document.activeElement !== document.body) return;
-
-      if (e.key === 'ArrowRight') { handleNextEpisode(); }
-      else if (e.key === 'ArrowLeft') { handlePrevEpisode(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleNextEpisode, handlePrevEpisode, show, id]);
+  // Arrow keys belong to spatial navigation (focus moves) and to the player
+  // embed (seek). They must never change the episode: a D-pad press on the
+  // last card in a row used to jump to the next episode. Episode changes come
+  // from the Prev/Next buttons, the end card, and autoplay only.
 
   if (loading) {
     return (
@@ -356,6 +351,7 @@ export const TVShowPage: FC = () => {
           media={show}
           season={currentSeason}
           episode={currentEpisode}
+          hasNextEpisode={!!(nextSeasonNum && nextEpisodeNum)}
           onAutoNext={() => {
             if (nextSeasonNum && nextEpisodeNum) handleNextEpisode();
           }}

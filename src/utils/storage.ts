@@ -21,26 +21,17 @@ function writeJson<T>(key: string, value: T): void {
   }
 }
 
-function readRaw(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
 const KEYS = {
-  PROVIDER: 'vid_library_provider',
   PROGRESS: 'vid_library_progress_v2',
   WATCHLIST: 'vid_library_watchlist_v1',
   PROVIDER_MEMORY: 'vid_library_provider_memory_v1',
   HEALTH: 'vid_library_server_health',
 };
 
-// Embeds fall back in this order: vidrock/vidapi are CORS-open, videasy is a
-// reliable third option, peachify is second-tier, vidsrc is last (most ad-heavy),
-// with vidcore/vidzee/mapple/111movies/streamx as additional options.
-const VALID_PROVIDERS: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'];
+// Embeds fall back in this order. 111Movies and StreamX are first because
+// they resolve titles by TMDB id and are the most reliable; vidrock/vidapi are
+// CORS-open, videasy is a reliable third option, vidsrc is last (most ad-heavy).
+const VALID_PROVIDERS: ProviderId[] = ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'];
 
 export interface ServerHealth {
   success: number;
@@ -87,18 +78,8 @@ function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (VALID_PROVIDERS as string[]).includes(value);
 }
 
-export function getPreferredProvider(): ProviderId {
-  const saved = readRaw(KEYS.PROVIDER);
-  if (isProviderId(saved)) return saved;
-  return 'vidrock';
-}
-
-export function setPreferredProvider(provider: ProviderId): void {
-  writeJson(KEYS.PROVIDER, provider);
-}
-
-// Remembers which embed server last worked for a given title so we can
-// auto-start on the reliable server and skip dead ones on fallback.
+// Remembers which embed server last worked for a given title so automatic
+// fallback can try reliable servers first.
 // (A client can't probe embed domains directly due to CORS, so we use the
 // iframe's onLoad as a lightweight reachability signal instead.)
 
@@ -111,25 +92,13 @@ function readProviderMemory(): Record<string, ProviderId> {
   return out;
 }
 
-/** Best-guess server order: remembered-good first, then the rest. */
-export function getProviderFallbackOrder(): ProviderId[] {
-  const memory = readProviderMemory();
-  const ordered: ProviderId[] = [];
-  const seen = new Set<ProviderId>();
-  for (const value of Object.values(memory)) {
-    if (seen.has(value)) continue;
-    ordered.push(value);
-    seen.add(value);
-  }
-  for (const id of VALID_PROVIDERS) {
-    if (!seen.has(id)) ordered.push(id);
-  }
-  return ordered;
-}
-
-export function getRememberedProvider(mediaId: string): ProviderId | null {
-  const memory = readProviderMemory();
-  return memory[mediaId] || null;
+/** Server order: exactly the user's list. The full list is used only when the
+ *  user has removed every server, so there is still something to try.
+ *  The arrows, the fallback chain and the "Server N" label all read this, so
+ *  they can never disagree with Settings. */
+export function getProviderFallbackOrder(preferred: ProviderId[] = []): ProviderId[] {
+  const chosen = preferred.filter((id) => isProviderId(id));
+  return chosen.length > 0 ? chosen : [...VALID_PROVIDERS];
 }
 
 export function rememberProvider(mediaId: string, provider: ProviderId): void {
@@ -264,10 +233,16 @@ export function saveWatchProgress(progress: WatchProgress): void {
   mutateProgress((items) => {
     const existing = items[key];
     // Merge with the stored entry so backfilled metadata (genre, rating,
-    // poster) survives partial updates from player events.
+    // poster, title) survives partial updates from player events.
+    const incomingTitle = progress.title;
+    const shouldPreserveExistingTitle =
+      !incomingTitle || incomingTitle === progress.id;
     items[key] = {
       ...existing,
       ...progress,
+      title: shouldPreserveExistingTitle
+        ? existing?.title ?? incomingTitle
+        : incomingTitle,
       posterUrl: progress.posterUrl || existing?.posterUrl,
       rating: progress.rating || existing?.rating,
       genre: progress.genre || existing?.genre,
@@ -330,6 +305,18 @@ export function updateProgressGenreForShow(id: string, genre: string): void {
   mutateProgress((items) => {
     for (const item of Object.values(items)) {
       if (item.id === id && !item.genre) item.genre = genre;
+    }
+  });
+}
+
+/** Persist a resolved title onto every stored progress entry of a title. */
+export function updateProgressTitle(id: string, title: string): void {
+  if (!title) return;
+  mutateProgress((items) => {
+    for (const item of Object.values(items)) {
+      if (item.id === id && (!item.title || item.title === id)) {
+        item.title = title;
+      }
     }
   });
 }

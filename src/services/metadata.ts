@@ -1,5 +1,5 @@
 import { extractImdbId } from '../utils/imdb';
-import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson, tmdbUrl } from './config';
+import { TMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbFetchJson, tmdbDirectUrl } from './config';
 import type { SearchResult } from './search';
 
 /**
@@ -133,12 +133,14 @@ export async function detectMediaType(
   const keys = TMDB_API_KEY
     ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
     : [FALLBACK_TMDB_API_KEY];
-  const usable = keys.filter((k) => canUseTmdb(k));
+  // Direct requests need a non-empty key: `tmdbDirectUrl` returns '' without
+  // one, and `fetch('')` would request the current page instead.
+  const usable = keys.filter((k) => Boolean(k) && canUseTmdb(k));
   if (usable.length === 0) return null;
 
   for (const key of usable) {
     try {
-      const res = await fetch(tmdbUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
+      const res = await fetch(tmdbDirectUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
       if (!res.ok) continue;
       const data: TmdbFindResult = await res.json();
       const hasMovie = (data.movie_results?.length ?? 0) > 0;
@@ -151,6 +153,22 @@ export async function detectMediaType(
     }
   }
   return null;
+}
+
+/**
+ * Resolve a TMDB numeric ID from either an IMDb ID (tt...) or a numeric TMDB ID.
+ * If the input is already a numeric TMDB ID, it's returned directly.
+ * Otherwise, uses TMDB's find API to convert IMDb ID to TMDB ID.
+ */
+export async function resolveTmdbId(
+  id: string,
+  type: 'movie' | 'tv',
+  signal?: AbortSignal,
+): Promise<TmdbResolved | null> {
+  if (!id.startsWith('tt') && /^\d+$/.test(id)) {
+    return { id, posterPath: undefined, backdropPath: undefined };
+  }
+  return resolveTmdbFromImdb(id, type, signal);
 }
 
 /**
@@ -170,12 +188,12 @@ export async function resolveTmdbFromImdb(
   const keys = TMDB_API_KEY
     ? [TMDB_API_KEY, FALLBACK_TMDB_API_KEY]
     : [FALLBACK_TMDB_API_KEY];
-  const usable = keys.filter((k) => canUseTmdb(k));
+  const usable = keys.filter((k) => Boolean(k) && canUseTmdb(k));
   if (usable.length === 0) return null;
 
   for (const key of usable) {
     try {
-      const res = await fetch(tmdbUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
+      const res = await fetch(tmdbDirectUrl(`/find/${encodeURIComponent(imdbId)}?external_source=imdb_id`, key), { signal });
       if (!res.ok) continue;
       const data: TmdbFindResult = await res.json();
       const movie = data.movie_results?.[0];
@@ -195,6 +213,70 @@ export async function resolveTmdbFromImdb(
   }
   tmdbIdCache.set(cacheKey, { value: null, at: Date.now() });
   return null;
+}
+
+/**
+ * Fetch the title for a media ID (IMDB or TMDB).
+ * Uses TMDB API for both ID types, with Wikidata fallback for IMDB IDs.
+ */
+export async function fetchTitle(
+  id: string,
+  type: 'movie' | 'tv',
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const tmdb = await resolveTmdbId(id, type, signal);
+  if (tmdb) {
+    const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+    if (canUseTmdb(tmdbKey)) {
+      try {
+        const data = await tmdbFetchJson(`/${type}/${tmdb.id}`, tmdbKey, signal) as Record<string, any> | null;
+        if (data?.name || data?.title) {
+          return data.name || data.title;
+        }
+      } catch {
+        // fall through to Wikidata fallback for IMDB IDs
+      }
+    }
+  }
+
+  // For numeric TMDB IDs, try to resolve to IMDb ID then use Wikidata
+  if (!id.startsWith('tt') && /^\d+$/.test(id)) {
+    const imdbId = await resolveImdbFromTmdb(id, type, signal);
+    if (imdbId) {
+      const resolved = await resolveImdbTitle(imdbId, signal);
+      if (resolved?.title && resolved.title !== imdbId) {
+        return resolved.title;
+      }
+    }
+  }
+
+  if (id.startsWith('tt')) {
+    const resolved = await resolveImdbTitle(id, signal);
+    if (resolved?.title && resolved.title !== id) {
+      return resolved.title;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve an IMDb ID from a numeric TMDB ID using TMDB's external_ids endpoint.
+ */
+async function resolveImdbFromTmdb(
+  tmdbId: string,
+  type: 'movie' | 'tv',
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!canUseTmdb(tmdbKey)) return null;
+
+  try {
+    const data = await tmdbFetchJson(`/${type}/${tmdbId}/external_ids`, tmdbKey, signal) as Record<string, any> | null;
+    return data?.imdb_id || null;
+  } catch {
+    return null;
+  }
 }
 
 /**

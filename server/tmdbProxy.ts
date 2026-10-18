@@ -2,8 +2,8 @@
  * Shared TMDB proxy logic.
  *
  * Implemented once and used by both the dev server (Vite plugin middleware)
- * and the production Vercel function (api/tmdb.ts), so the two paths cannot
- * drift apart.
+ * and the production Vercel function (api/tmdb/[...path].ts), so the two paths
+ * cannot drift apart.
  *
  * The TMDB key is read from the *server* environment (TMDB_API_KEY) and never
  * from a VITE_-prefixed variable, so it is not inlined into the client bundle.
@@ -24,7 +24,10 @@ interface ProxyResult {
 
 async function proxyTmdb(req: IncomingMessage): Promise<ProxyResult> {
   const url = new URL(req.url || '/', 'http://localhost');
-  const pathname = url.pathname;
+  // The client calls `/api/tmdb/<path>` on the app host, but the upstream
+  // expects `<path>` only — without stripping the mount prefix every request
+  // would be forwarded to `https://api.themoviedb.org/3/api/tmdb/...` and 404.
+  const pathname = url.pathname.replace(/^\/api\/tmdb/, '');
 
   // Only forward ordinary resource paths — never an arbitrary URL.
   if (!ALLOWED_PATH.test(pathname) || pathname.includes('..')) {

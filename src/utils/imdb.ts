@@ -13,10 +13,3 @@ export function extractImdbId(input: string): string | null {
   const match = input.match(/tt\d{5,}/i);
   return match ? match[0].toLowerCase() : null;
 }
-
-/**
- * Checks if a string is a valid IMDb ID format.
- */
-export function isImdbId(input: string): boolean {
-  return /^tt\d{5,}$/i.test(input.trim());
-}

@@ -182,59 +182,8 @@ VidSrc embeds are served on open domains without registration. If a stream fails
 
 ## 4. Comparative Summary & Architectural Decisions
 
-1. **Player Control**: Neither provider exposes inbound `postMessage` command handlers. We use the provider's native player controls inside the iframe, and handle subtitle switching by updating the iframe `src` with `ds_lang={code}&resumeAt={progress}`.
-2. **CORS & Authentication**: VidAPI listing endpoints allow public cross-origin CORS requests (`Access-Control-Allow-Origin: *`). Neither provider requires server secrets for embeds. A 100% static client-side web application is optimal.
-3. **Resiliency**: If one provider is unavailable, the user can choose the alternative provider via unobtrusive UI pills (`[ VidRock ] [ VidAPI ] [ VidSrc ]`). Provider switching is always explicit upon user interaction.
+1. **Player Control**: No provider exposes inbound `postMessage` command handlers. Playback uses the provider's own controls inside the iframe. Resume position is passed as a query parameter when the embed URL is built (`resumeAt`, `progress` or `startAt`, depending on the provider).
+2. **CORS & Authentication**: VidAPI listing endpoints allow public cross-origin CORS requests (`Access-Control-Allow-Origin: *`). No provider requires server secrets for embeds. A client-side web application is sufficient.
+3. **Resiliency**: The player has ten servers. The prev/next arrows walk the order set in Settings, and a failed server falls back automatically. A server can be pinned for one show.
 
 ---
-
-## 5. VidVault (`vidvault.ru`) — Direct Source
-
-VidVault is a **direct-source** backend (Server 6, native player) — not an embed.
-It resolves TMDb IDs to direct MP4 download links (multiple resolutions) plus
-SRT subtitles, proxied through a CORS-open worker so a pure client can stream them.
-
-### API (CORS-open, `Access-Control-Allow-Origin: *`)
-
-#### Get token
-- **Endpoint**: `GET https://vidvault.ru/api/get-token`
-- **Response**: `{ "t": "<token>", "e": "<expiry epoch ms>" }`
-
-#### Resolve downloads
-- **Endpoint**: `POST https://vidvault.ru/api/download-proxy`
-- **Headers**: `Content-Type: application/json`, `x-request-token: <token>`
-  (preflight `OPTIONS` allows `content-type,x-request-token`).
-- **Body**: `{ "type": "movie"|"tv", "tmdbId": "<numeric>", "season": n, "episode": n }`
-  (`season`/`episode` only for `tv`).
-- **Response** (movies/episodes):
-  ```json
-  {
-    "mp4Data": {
-      "downloadInfo": { "data": {
-        "downloads": [ { "url": "...", "resolution": 720, "size": "872092884", "format": "MP4", "codecName": "h264", "vipLocked": false } ],
-        "captions":  [ { "lan": "ar", "lanName": "العربية", "url": "https://cacdn.hakunaymatata.com/subtitle/...srt?Policy=...&Signature=...&Key-Pair-Id=..." } ]
-      } }
-    },
-    "mkvData": ..., "mkvV2Data": ..., "mkvV3Data": ..., "cached": true
-  }
-  ```
-  (MKV variants are ignored client-side — browsers can't play MKV.)
-
-### Delivery & CORS reality (verified 2026-08)
-- Raw video CDN `bcdnxw.hakunaymatata.com/*.mp4` → **429 rate-limited, no ACAO**
-  (not client-viable).
-- Primary proxy `dl.gemlelispe.workers.dev/<encURL>?n=name` → 403/451, no ACAO.
-- **Working stream path**: `https://vlaq11.site/<encodeURIComponent(url)>?n=<name>`
-  → **206 Partial Content, `video/mp4`, `ACAO: *`** (this is the site's own
-  fallback proxy; used directly in `VidVaultDirectSource`).
-- Subtitles: raw caption CDN `cacdn.hakunaymatata.com/...srt` is CORS-open;
-  fetched as a blob. SRT is converted to WebVTT client-side
-  (`src/utils/subtitles.ts`) because `<track>` requires VTT.
-
-### Implementation notes
-- Provider file: `src/providers/VidVaultDirectSource.ts` (`fetchVidVaultStreams`),
-  wired in `NativePlayer` via a `source` prop and exposed as **Server 6** in
-  `VideoPlayer` (`SERVER_BUTTONS`). Not part of the embed `PROVIDERS` registry.
-- Sources are sorted by resolution descending; the player auto-falls back to
-  lower resolutions on error. Token is cached in-memory until its expiry.
-- Results are cached with the shared `utils/streamCache.ts` (key prefix `vidvault`).

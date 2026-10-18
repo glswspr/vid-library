@@ -248,7 +248,7 @@ export const WatchHistoryPage: FC = () => {
     return (
       <button
         onClick={onClick}
-        className={`absolute ${pos} opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-900/80 hover:bg-rose-500/80 text-slate-300 hover:text-white rounded-lg`}
+        className={`pointer-events-auto absolute ${pos} opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-900/80 hover:bg-rose-500/80 text-slate-300 hover:text-white rounded-lg`}
         aria-label={`Remove ${item.title} from history`}
       >
         <X className="w-3.5 h-3.5" />
@@ -527,42 +527,50 @@ export const WatchHistoryPage: FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {groupItems.map((item) => {
                 return (
-                  <Link
+                  <div
                     key={item.seasonNumber && item.episodeNumber ? `${item.id}_s${item.seasonNumber}e${item.episodeNumber}` : item.id}
-                    to={item.type === 'movie' ? `/movie/${item.id}` : (item.seasonNumber && item.episodeNumber ? `/tv/${item.id}/season/${item.seasonNumber}/episode/${item.episodeNumber}` : `/tv/${item.id}`)}
-                    className="group relative bg-slate-900/50 rounded-xl border border-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-900 transition-all"
+                    className="group relative"
                   >
-                    <div className="relative">
-                      {renderThumbnail(item, 'aspect-[2/3]')}
+                    <Link
+                      to={item.type === 'movie' ? `/movie/${item.id}` : (item.seasonNumber && item.episodeNumber ? `/tv/${item.id}/season/${item.seasonNumber}/episode/${item.episodeNumber}` : `/tv/${item.id}`)}
+                      className="relative block bg-slate-900/50 rounded-xl border border-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-900 transition-all overflow-hidden"
+                    >
+                      <div className="relative">
+                        {renderThumbnail(item, 'aspect-[2/3]')}
 
-                      {renderProgressOverlay(item, true)}
+                        {renderProgressOverlay(item, true)}
+                      </div>
 
+                      <div className="p-2">
+                        <h3 className="font-semibold text-white text-sm truncate group-hover:text-cyan-400 transition-colors line-clamp-1">
+                          {item.title}
+                        </h3>
+                        <div className="flex items-center gap-1 mt-1 text-xs text-slate-500">
+                          <Clock className="w-3 h-3" />
+                          <span className="truncate">
+                            {formatProgress(item.progress, item.duration)}
+                          </span>
+                          <span className="text-slate-600">•</span>
+                          <span className="truncate">
+                            {formatDuration(item.progress)} / {formatDuration(item.duration)}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500 truncate">
+                          {item.type === 'movie' ? 'Movie' : `S${item.seasonNumber?.toString().padStart(2, '0')} E${item.episodeNumber?.toString().padStart(2, '0')}`}
+                        </div>
+                      </div>
+                    </Link>
+
+                    {/* Sibling of the link: a button inside an anchor is
+                        invalid HTML and makes click-through handling unreliable. */}
+                    <div className="absolute inset-x-0 top-0 aspect-[2/3] pointer-events-none">
                       {renderRemoveButton(item, (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         handleRemove(item.id, item.seasonNumber, item.episodeNumber);
                       }, 'top-right')}
                     </div>
-
-                    <div className="p-2">
-                      <h3 className="font-semibold text-white text-sm truncate group-hover:text-cyan-400 transition-colors line-clamp-1">
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center gap-1 mt-1 text-xs text-slate-500">
-                        <Clock className="w-3 h-3" />
-                        <span className="truncate">
-                          {formatProgress(item.progress, item.duration)}
-                        </span>
-                        <span className="text-slate-600">•</span>
-                        <span className="truncate">
-                          {formatDuration(item.progress)} / {formatDuration(item.duration)}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500 truncate">
-                        {item.type === 'movie' ? 'Movie' : `S${item.seasonNumber?.toString().padStart(2, '0')} E${item.episodeNumber?.toString().padStart(2, '0')}`}
-                      </div>
-                    </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
@@ -582,73 +590,80 @@ export const WatchHistoryPage: FC = () => {
                   : 0;
                 const isCompleted = item.completed;
                 return (
-                  <Link
+                  <div
                     key={item.seasonNumber && item.episodeNumber ? `${item.id}_s${item.seasonNumber}e${item.episodeNumber}` : item.id}
-                    to={item.type === 'movie' ? `/movie/${item.id}` : (item.seasonNumber && item.episodeNumber ? `/tv/${item.id}/season/${item.seasonNumber}/episode/${item.episodeNumber}` : `/tv/${item.id}`)}
-                    className="group relative flex items-center gap-3 bg-slate-900/30 rounded-xl p-2 border border-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-900/50 transition-all"
+                    className="group relative"
                   >
-                    <div className="relative w-16 h-24 shrink-0">
-                      {renderThumbnail(item, 'w-full h-full')}
-                      {renderProgressOverlay(item, false)}
+                    <Link
+                      to={item.type === 'movie' ? `/movie/${item.id}` : (item.seasonNumber && item.episodeNumber ? `/tv/${item.id}/season/${item.seasonNumber}/episode/${item.episodeNumber}` : `/tv/${item.id}`)}
+                      className="relative flex items-center gap-3 bg-slate-900/30 rounded-xl p-2 border border-slate-800/50 hover:border-cyan-500/50 hover:bg-slate-900/50 transition-all"
+                    >
+                      <div className="relative w-16 h-24 shrink-0">
+                        {renderThumbnail(item, 'w-full h-full')}
+                        {renderProgressOverlay(item, false)}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-white text-sm group-hover:text-cyan-400 transition-colors line-clamp-1">
+                              {item.title}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+                              {item.type === 'movie' ? (
+                                <span className="flex items-center gap-1">
+                                  <Film className="w-3 h-3" /> Movie
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  <Tv className="w-3 h-3" />
+                                  S{item.seasonNumber?.toString().padStart(2, '0')} E{item.episodeNumber?.toString().padStart(2, '0')}
+                                </span>
+                              )}
+                              {item.rating && <span>• {item.rating}★</span>}
+                              {item.genre && <span>• {item.genre.split(',')[0]?.trim()}</span>}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0 text-right">
+                            <div className="text-right">
+                              <div className="text-xs text-slate-300 font-mono">
+                                {formatProgress(item.progress, item.duration)}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {formatDuration(item.progress)} / {formatDuration(item.duration)}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                {formatDate(item.updatedAt)}
+                              </div>
+                            </div>
+                            {isCompleted ? (
+                              <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
+                            ) : (
+                              <PlayCircle className="w-4 h-4 text-cyan-400 shrink-0" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="absolute bottom-2 left-2 right-2 hidden sm:block">
+                          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-cyan-400 rounded-full"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+
+                    <div className="absolute left-2 top-2 h-24 w-16 pointer-events-none">
                       {renderRemoveButton(item, (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         handleRemove(item.id, item.seasonNumber, item.episodeNumber);
                       }, 'top-left')}
                     </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-white text-sm group-hover:text-cyan-400 transition-colors line-clamp-1">
-                            {item.title}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-                            {item.type === 'movie' ? (
-                              <span className="flex items-center gap-1">
-                                <Film className="w-3 h-3" /> Movie
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1">
-                                <Tv className="w-3 h-3" />
-                                S{item.seasonNumber?.toString().padStart(2, '0')} E{item.episodeNumber?.toString().padStart(2, '0')}
-                              </span>
-                            )}
-                            {item.rating && <span>• {item.rating}★</span>}
-                            {item.genre && <span>• {item.genre.split(',')[0]?.trim()}</span>}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 text-right">
-                          <div className="text-right">
-                            <div className="text-xs text-slate-300 font-mono">
-                              {formatProgress(item.progress, item.duration)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {formatDuration(item.progress)} / {formatDuration(item.duration)}
-                            </div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {formatDate(item.updatedAt)}
-                            </div>
-                          </div>
-                          {isCompleted ? (
-                            <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
-                          ) : (
-                            <PlayCircle className="w-4 h-4 text-cyan-400 shrink-0" />
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="absolute bottom-2 left-2 right-2 hidden sm:block">
-                        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-cyan-400 rounded-full"
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>

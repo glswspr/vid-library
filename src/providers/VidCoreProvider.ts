@@ -4,7 +4,9 @@ import { createEmbedProvider } from './BaseEmbedProvider';
  * VidCore embed provider (https://vidcore.io). Standard iframe embed:
  *   movies: https://vidcore.io/movie/{id}
  *   tv:     https://vidcore.io/tv/{id}/{season}/{episode}
- * Supports an `autoPlay` query param.
+ * VidCore names its autoplay parameter `autoPlay=true` (not the generic
+ * `autoplay` that `buildEmbedUrl` emits), so it stays in the template. The
+ * `&` join in `buildEmbedUrl` keeps `resumeAt` working alongside it.
  */
 export const vidCoreProvider = createEmbedProvider({
   id: 'vidcore',

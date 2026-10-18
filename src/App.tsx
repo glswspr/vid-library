@@ -12,11 +12,27 @@ import { useSpatialNav } from './hooks/useSpatialNav';
 import { useSettings } from './hooks/useSettings';
 import { OfflineBanner } from './components/OfflineBanner';
 import { scrollToVideoPlayer } from './utils/scroll';
+import { readableAccent } from './utils/accent';
 
 function AccentApplier() {
   const [settings] = useSettings();
   useEffect(() => {
-    document.documentElement.style.setProperty('--accent', settings.accentColor);
+    const root = document.documentElement;
+    const accent = readableAccent(settings.accentColor);
+    root.style.setProperty('--accent', accent);
+    // Tailwind utilities resolve to `var(--color-cyan-*)`, so remapping that
+    // scale is what makes the picker change the actual UI. Inline custom
+    // properties also win over the light-theme block in index.css.
+    const shades: Record<string, string> = {
+      '300': `color-mix(in srgb, ${accent} 60%, white)`,
+      '400': accent,
+      '500': accent,
+      '600': `color-mix(in srgb, ${accent} 88%, black)`,
+      '700': `color-mix(in srgb, ${accent} 75%, black)`,
+    };
+    for (const [step, value] of Object.entries(shades)) {
+      root.style.setProperty(`--color-cyan-${step}`, value);
+    }
   }, [settings.accentColor]);
   return null;
 }

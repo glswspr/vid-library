@@ -8,6 +8,7 @@ import { ContinueWatching } from '../components/ContinueWatching';
 import { MyList } from '../components/MyList';
 import { Trending } from '../components/Trending';
 import { HomeRows } from '../components/HomeRows';
+import { NewEpisodes } from '../components/NewEpisodes';
 import { FOCUS_SEARCH_EVENT } from '../components/Navbar';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { isTvDevice } from '../utils/tv';
@@ -232,7 +233,7 @@ export const HomePage: FC = () => {
 
         {/* Search results */}
         {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
-          <div className="mt-4" id="search-results" role="listbox">
+          <div className="mt-4" id="search-results">
             {searchError ? (
               <div className="flex items-center gap-3 px-5 py-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl text-base text-rose-400">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -262,13 +263,16 @@ export const HomePage: FC = () => {
       {/* Continue Watching */}
       <ContinueWatching />
 
+      {/* New Episodes */}
+      <NewEpisodes />
+
       {/* My List */}
       <MyList />
 
       {/* Recommendations (Trending Movies / Trending TV Shows) */}
       <Trending />
 
-      {/* Curated rows: Top Rated, New This Month, Because You Watched, Coming Soon, Genre rows */}
+      {/* Curated rows: Top Rated, Because You Watched, Genre rows */}
       <HomeRows />
     </div>
   );

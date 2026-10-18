@@ -4,16 +4,16 @@ import { RotateCcw, SkipForward, ArrowLeft } from 'lucide-react';
 
 interface EndOfContentOverlayProps {
   mediaType: 'movie' | 'tv';
-  nextSeason?: number | null;
-  nextEpisode?: number | null;
+  /** True when the show has another episode after the one just finished. */
+  canGoNext: boolean;
   onReplay: () => void;
   onNext?: () => void;
 }
 
 const EndOfContentOverlay: FC<EndOfContentOverlayProps> = ({
-  mediaType, nextSeason, nextEpisode, onReplay, onNext,
+  mediaType, canGoNext, onReplay, onNext,
 }) => {
-  const canGoNext = mediaType === 'tv' && !!nextSeason && !!nextEpisode;
+  const showNext = mediaType === 'tv' && canGoNext && !!onNext;
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-slate-950/90 backdrop-blur-sm p-6">
@@ -31,7 +31,7 @@ const EndOfContentOverlay: FC<EndOfContentOverlayProps> = ({
           <RotateCcw className="w-4 h-4" /> Replay
         </button>
 
-        {canGoNext && onNext && (
+        {showNext && (
           <button
             type="button"
             onClick={onNext}

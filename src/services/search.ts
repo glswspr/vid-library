@@ -1,4 +1,4 @@
-import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbUrl } from './config';
+import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbDirectUrl } from './config';
 
 export interface SearchResult {
   imdbId: string;
@@ -50,10 +50,12 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
 
 async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
-  if (!canUseTmdb(tmdbKey)) return [];
+  // Without a key the direct URL builder returns "" and `fetch('')` would hit
+  // the page itself, so bail out instead of sending a useless request.
+  if (!tmdbKey || !canUseTmdb(tmdbKey)) return [];
 
   try {
-    const searchRes = await fetch(tmdbUrl(`/search/multi?query=${encodeURIComponent(cleanQuery)}&page=1`, tmdbKey), { signal });
+    const searchRes = await fetch(tmdbDirectUrl(`/search/multi?query=${encodeURIComponent(cleanQuery)}&page=1`, tmdbKey), { signal });
     if (!searchRes.ok) return [];
 
     const data = await searchRes.json();
@@ -67,7 +69,7 @@ async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<Sea
     for (const item of items.slice(0, 8)) {
       let imdbId: string | undefined;
       try {
-        const extRes = await fetch(tmdbUrl(`/${item.media_type}/${item.id}/external_ids`, tmdbKey), { signal });
+        const extRes = await fetch(tmdbDirectUrl(`/${item.media_type}/${item.id}/external_ids`, tmdbKey), { signal });
         if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
       } catch (e) {
         if (isAbort(e)) throw e;

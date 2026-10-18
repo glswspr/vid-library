@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FC, ComponentType } from 'react';
 import { getAllWatchProgress } from '../utils/storage';
+import { computeWatchTime } from '../utils/watchStats';
 import { Film, Tv, Clock, Sparkles, BarChart3 } from 'lucide-react';
 
 interface Stats {
@@ -35,13 +36,10 @@ function computeStats(): Stats | null {
   const monthStart = startOfMonth();
   const movieIdsThisMonth = new Set<string>();
   let episodesThisMonth = 0;
-  let totalSeconds = 0;
   const genreCounts = new Map<string, number>();
   const seenTitles = new Set<string>();
 
   for (const item of items) {
-    totalSeconds += item.progress || 0;
-
     if (item.updatedAt >= monthStart) {
       if (item.type === 'movie') {
         movieIdsThisMonth.add(item.id);
@@ -70,7 +68,7 @@ function computeStats(): Stats | null {
   return {
     moviesThisMonth: movieIdsThisMonth.size,
     episodesThisMonth,
-    totalSeconds,
+    totalSeconds: computeWatchTime(items),
     topGenre,
   };
 }

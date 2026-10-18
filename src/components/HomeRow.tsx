@@ -43,9 +43,12 @@ export const HomeRow: FC<HomeRowProps> = ({ def, getExcludeIds, onLoaded }) => {
         observer.disconnect();
         setState('loading');
 
-        const exclude = getExcludeIds();
         loadRow(def).then((result) => {
-          const filtered = result.filter((it) => !exclude.has(it.id));
+          // Re-read the exclusion set after the fetch: rows load in parallel,
+          // so a snapshot taken before it still misses ids claimed by a row
+          // that finished first (the same title would appear in two rows).
+          const claimed = getExcludeIds();
+          const filtered = result.filter((it) => !claimed.has(it.id));
           if (filtered.length === 0) {
             setState('empty');
             return;

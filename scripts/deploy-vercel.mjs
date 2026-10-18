@@ -6,7 +6,8 @@
 // used to trigger arbitrary production deploys.
 //
 // Setup (once per machine):
-//   1. Create a .env file in the project root (it is gitignored):
+//   1. Create a .env or .env.local file in the project root (both are
+//      gitignored):
 //        VERCEL_DEPLOY_HOOK=https://api.vercel.com/v1/integrations/deploy/<project>/<token>
 //   2. Run `npm run deploy` as usual.
 //
@@ -20,11 +21,15 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function hookFromEnvFile() {
-  const envPath = path.join(root, '.env');
-  if (!existsSync(envPath)) return null;
-  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*VERCEL_DEPLOY_HOOK\s*=\s*(.+)\s*$/);
-    if (match) return match[1].trim().replace(/^["']|["']$/g, '');
+  // `.env` is the documented file; `.env.local` is what this repo actually
+  // uses (it is also the file Vercel CLI creates). Read the first that exists.
+  for (const name of ['.env', '.env.local']) {
+    const envPath = path.join(root, name);
+    if (!existsSync(envPath)) continue;
+    for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*VERCEL_DEPLOY_HOOK\s*=\s*(.+)\s*$/);
+      if (match) return match[1].trim().replace(/^["']|["']$/g, '');
+    }
   }
   return null;
 }
@@ -34,7 +39,7 @@ const hook = process.env.VERCEL_DEPLOY_HOOK || hookFromEnvFile();
 if (!hook) {
   console.error(
     'Missing VERCEL_DEPLOY_HOOK.\n' +
-    '  1. Create .env in the project root (gitignored) with:\n' +
+    '  1. Create .env or .env.local in the project root (both gitignored) with:\n' +
     '       VERCEL_DEPLOY_HOOK=https://api.vercel.com/v1/integrations/deploy/<project>/<token>\n' +
     '  2. Re-run `npm run deploy:vercel`.\n' +
     '  Generate the hook at: Vercel dashboard > Project > Settings > Git > Deploy Hooks',

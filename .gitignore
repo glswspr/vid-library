@@ -23,10 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment files
+# Environment files — the example stays trackable so a fresh clone can copy it
 .env
-.env.local
-.env.production
-.env.development
+.env.*
+!.env.example
 
 .vercel
+
+graphify-out/
+

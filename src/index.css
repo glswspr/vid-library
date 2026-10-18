@@ -9,7 +9,7 @@
 
   /* ── TV remote friendly focus ring ───────────────────────────── */
   *:focus-visible {
-    outline: 3px solid #06b6d4 !important;
+    outline: 3px solid var(--accent, #06b6d4) !important;
     outline-offset: 3px !important;
     border-radius: 4px;
   }
@@ -20,7 +20,7 @@
    [role="button"]:focus-visible,
    [role="option"]:focus-visible,
    select:focus-visible {
-     outline: 3px solid #06b6d4 !important;
+     outline: 3px solid var(--accent, #06b6d4) !important;
      outline-offset: 2px !important;
      border-radius: 8px;
    }
@@ -58,12 +58,12 @@
    }
 
 
-  /* Inputs — bright cyan glow */
+  /* Inputs — bright accent glow */
   input:focus-visible,
   textarea:focus-visible {
-    outline: 3px solid #06b6d4 !important;
+    outline: 3px solid var(--accent, #06b6d4) !important;
     outline-offset: 2px !important;
-    border-color: #06b6d4 !important;
+    border-color: var(--accent, #06b6d4) !important;
     box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2) !important;
   }
 
@@ -115,7 +115,7 @@ iframe {
 
 /* Explicit TV mode (JS-detected): max-contrast ring + overscan breathing room */
 html.tv-mode *:focus-visible {
-  outline: 4px solid #22d3ee !important;
+  outline: 4px solid var(--accent, #22d3ee) !important;
   outline-offset: 4px !important;
   box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.25) !important;
 }

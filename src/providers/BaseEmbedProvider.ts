@@ -28,7 +28,9 @@ export function buildEmbedUrl(
   }
 
   const queryString = params.toString();
-  return queryString ? `${url}?${queryString}` : url;
+  if (!queryString) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}${queryString}`;
 }
 
 /**

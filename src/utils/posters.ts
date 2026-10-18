@@ -1,4 +1,4 @@
-import { resolvePosterUrl, fetchTmdbRating, fetchTmdbGenre } from '../services/metadata';
+import { resolvePosterUrl, fetchTmdbRating, fetchTmdbGenre, fetchTitle } from '../services/metadata';
 
 // In-memory caches so repeated list renders don't hammer TMDB's rate limits.
 const cache = new Map<string, string | undefined>();
@@ -64,6 +64,37 @@ export async function getRatingUrl(
 
 const genreCache = new Map<string, string | undefined>();
 const genreInflight = new Map<string, Promise<string | undefined>>();
+
+const titleCache = new Map<string, string | undefined>();
+const titleInflight = new Map<string, Promise<string | undefined>>();
+
+/**
+ * Resolve a title for an ID (IMDB or TMDB), memoized per session.
+ */
+export async function getTitle(
+  id: string,
+  type: 'movie' | 'tv',
+): Promise<string | undefined> {
+  if (!id) return undefined;
+  if (titleCache.has(id)) return titleCache.get(id);
+  const existing = titleInflight.get(id);
+  if (existing) return existing;
+
+  const p = fetchTitle(id, type)
+    .then((title) => {
+      const result = title ?? undefined;
+      titleCache.set(id, result);
+      titleInflight.delete(id);
+      return result;
+    })
+    .catch(() => {
+      titleCache.set(id, undefined);
+      titleInflight.delete(id);
+      return undefined;
+    });
+  titleInflight.set(id, p);
+  return p;
+}
 
 /**
  * Resolve a comma-separated genre list for an IMDb ID, memoized per session.
