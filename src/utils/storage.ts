@@ -28,10 +28,10 @@ const KEYS = {
   HEALTH: 'vid_library_server_health',
 };
 
-// Embeds fall back in this order: vidrock/vidapi are CORS-open, videasy is a
-// reliable third option, peachify is second-tier, vidsrc is last (most ad-heavy),
-// with vidcore/vidzee/mapple/111movies/streamx as additional options.
-const VALID_PROVIDERS: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'];
+// Embeds fall back in this order. 111Movies and StreamX are first because
+// they resolve titles by TMDB id and are the most reliable; vidrock/vidapi are
+// CORS-open, videasy is a reliable third option, vidsrc is last (most ad-heavy).
+const VALID_PROVIDERS: ProviderId[] = ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'];
 
 export interface ServerHealth {
   success: number;

@@ -269,19 +269,10 @@ export const TVShowPage: FC = () => {
           goNext: handleNextEpisode, goPrev: handlePrevEpisode } =
     useEpisodeNavigation(show, currentSeason, currentEpisode, navigate);
 
-  useEffect(() => {
-    if (!show || !id) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (document.activeElement !== document.body) return;
-
-      if (e.key === 'ArrowRight') { handleNextEpisode(); }
-      else if (e.key === 'ArrowLeft') { handlePrevEpisode(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleNextEpisode, handlePrevEpisode, show, id]);
+  // Arrow keys belong to spatial navigation (focus moves) and to the player
+  // embed (seek). They must never change the episode: a D-pad press on the
+  // last card in a row used to jump to the next episode. Episode changes come
+  // from the Prev/Next buttons, the end card, and autoplay only.
 
   if (loading) {
     return (

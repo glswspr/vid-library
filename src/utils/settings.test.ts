@@ -3,13 +3,39 @@ import { getSettings, saveSettings, resolveDefaultProvider, setShowDefaultProvid
 import { rememberProvider } from './storage';
 
 describe('settings defaults', () => {
-  it('returns a default server when nothing is stored', () => {
-    expect(getSettings().defaultProvider).toBe('vidrock');
+  it('starts on 111Movies', () => {
+    expect(getSettings().defaultProvider).toBe('m111');
+  });
+
+  it('lists 111Movies and StreamX as the first two servers', () => {
+    expect(getSettings().preferredProviders.slice(0, 2)).toEqual(['m111', 'streamx']);
   });
 
   it('persists a changed default server', () => {
     saveSettings({ defaultProvider: 'videasy' });
     expect(getSettings().defaultProvider).toBe('videasy');
+  });
+});
+
+describe('legacy settings migration', () => {
+  it('replaces the old untouched order with the new default', () => {
+    localStorage.setItem('vid_library_settings', JSON.stringify({
+      defaultProvider: 'vidrock',
+      preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'],
+    }));
+    const settings = getSettings();
+    expect(settings.preferredProviders.slice(0, 2)).toEqual(['m111', 'streamx']);
+    expect(settings.defaultProvider).toBe('m111');
+  });
+
+  it('keeps a customised order and default', () => {
+    localStorage.setItem('vid_library_settings', JSON.stringify({
+      defaultProvider: 'vidrock',
+      preferredProviders: ['vidrock', 'm111'],
+    }));
+    const settings = getSettings();
+    expect(settings.preferredProviders).toEqual(['vidrock', 'm111']);
+    expect(settings.defaultProvider).toBe('vidrock');
   });
 });
 

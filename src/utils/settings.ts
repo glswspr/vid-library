@@ -23,13 +23,16 @@ export interface ShowServerPin {
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
+/** Order used before 111Movies and StreamX became the first two servers. */
+const LEGACY_PREFERRED_ORDER: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'];
+
 const DEFAULTS: AppSettings = {
-  defaultProvider: 'vidrock',
+  defaultProvider: 'm111',
   autoplayNext: true,
   accentColor: '#06b6d4',
   englishOnly: true,
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
-  preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'],
+  preferredProviders: ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'],
   theme: 'dark',
   showDefaultProviders: {},
 };
@@ -80,18 +83,36 @@ function sanitizeAccentColor(value: unknown): string {
     : DEFAULTS.accentColor;
 }
 
+/**
+ * Detect a stored order the user never edited: the previous default array,
+ * in the previous order. Only then is it replaced by the new default, so a
+ * customised order is never overwritten.
+ */
+function isLegacyDefaultOrder(stored: ProviderId[]): boolean {
+  return stored.length === LEGACY_PREFERRED_ORDER.length &&
+    stored.every((id, index) => id === LEGACY_PREFERRED_ORDER[index]);
+}
+
 function readSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const storedPreferred = Array.isArray(parsed.preferredProviders)
+      ? parsed.preferredProviders.filter(isValidProvider)
+      : DEFAULTS.preferredProviders;
+    const untouchedOrder = isLegacyDefaultOrder(storedPreferred);
+    const storedDefault = isValidProvider(parsed.defaultProvider);
     return {
-      defaultProvider: isValidProvider(parsed.defaultProvider) ?? DEFAULTS.defaultProvider,
+      // A user who never changed either value follows the new server 1.
+      defaultProvider: untouchedOrder && storedDefault === 'vidrock'
+        ? DEFAULTS.defaultProvider
+        : storedDefault ?? DEFAULTS.defaultProvider,
       autoplayNext: typeof parsed.autoplayNext === 'boolean' ? parsed.autoplayNext : DEFAULTS.autoplayNext,
       accentColor: sanitizeAccentColor(parsed.accentColor),
       englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
       genreRows: sanitizeGenreRows(parsed.genreRows),
-      preferredProviders: Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders.filter(isValidProvider) : DEFAULTS.preferredProviders,
+      preferredProviders: untouchedOrder ? DEFAULTS.preferredProviders : storedPreferred,
       theme: isValidTheme(parsed.theme) ?? DEFAULTS.theme,
       showDefaultProviders: sanitizeShowDefaultProviders(parsed.showDefaultProviders),
       };
