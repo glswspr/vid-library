@@ -24,7 +24,10 @@ interface ProxyResult {
 
 async function proxyTmdb(req: IncomingMessage): Promise<ProxyResult> {
   const url = new URL(req.url || '/', 'http://localhost');
-  const pathname = url.pathname;
+  // The client calls `/api/tmdb/<path>` on the app host, but the upstream
+  // expects `<path>` only — without stripping the mount prefix every request
+  // would be forwarded to `https://api.themoviedb.org/3/api/tmdb/...` and 404.
+  const pathname = url.pathname.replace(/^\/api\/tmdb/, '');
 
   // Only forward ordinary resource paths — never an arbitrary URL.
   if (!ALLOWED_PATH.test(pathname) || pathname.includes('..')) {

@@ -8,6 +8,7 @@ import { ContinueWatching } from '../components/ContinueWatching';
 import { MyList } from '../components/MyList';
 import { Trending } from '../components/Trending';
 import { HomeRows } from '../components/HomeRows';
+import { NewEpisodes } from '../components/NewEpisodes';
 import { FOCUS_SEARCH_EVENT } from '../components/Navbar';
 import { useTvInitialFocus } from '../hooks/useTvInitialFocus';
 import { isTvDevice } from '../utils/tv';
@@ -261,6 +262,9 @@ export const HomePage: FC = () => {
 
       {/* Continue Watching */}
       <ContinueWatching />
+
+      {/* New Episodes */}
+      <NewEpisodes />
 
       {/* My List */}
       <MyList />

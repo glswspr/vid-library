@@ -13,6 +13,14 @@ export interface AppSettings {
   preferredProviders: ProviderId[];
   /** UI color scheme. */
   theme: 'dark' | 'light';
+  /** Explicit per-show server pins keyed by media id. Wins over everything else. */
+  showDefaultProviders: Record<string, ShowServerPin>;
+}
+
+export interface ShowServerPin {
+  provider: ProviderId;
+  /** Show name, stored so Settings can list pins without a network lookup. */
+  title?: string;
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
@@ -24,6 +32,7 @@ const DEFAULTS: AppSettings = {
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
   preferredProviders: ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'],
   theme: 'dark',
+  showDefaultProviders: {},
 };
 
 function isValidProvider(value: unknown): ProviderId | null {
@@ -41,8 +50,35 @@ function sanitizeGenreRows(value: unknown): number[] {
     .slice(0, GENRE_ROWS_MAX);
 }
 
+function sanitizeShowDefaultProviders(value: unknown): Record<string, ShowServerPin> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const out: Record<string, ShowServerPin> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (!key) continue;
+    // Older builds stored a bare provider id; accept both shapes.
+    const provider = typeof val === 'string'
+      ? isValidProvider(val)
+      : isValidProvider((val as ShowServerPin | null)?.provider);
+    if (!provider) continue;
+    const title = typeof val === 'object' && val !== null
+      ? (val as ShowServerPin).title
+      : undefined;
+    out[key] = typeof title === 'string' && title ? { provider, title } : { provider };
+  }
+  return out;
+}
+
 function isValidTheme(value: unknown): 'dark' | 'light' | null {
   return value === 'light' || value === 'dark' ? value : null;
+}
+
+/** Accent colors are injected into CSS, so only accept a plain hex value. */
+function sanitizeAccentColor(value: unknown): string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+    ? value
+    : DEFAULTS.accentColor;
 }
 
 function readSettings(): AppSettings {
@@ -53,11 +89,12 @@ function readSettings(): AppSettings {
     return {
       defaultProvider: isValidProvider(parsed.defaultProvider) ?? DEFAULTS.defaultProvider,
       autoplayNext: typeof parsed.autoplayNext === 'boolean' ? parsed.autoplayNext : DEFAULTS.autoplayNext,
-      accentColor: typeof parsed.accentColor === 'string' ? parsed.accentColor : DEFAULTS.accentColor,
+      accentColor: sanitizeAccentColor(parsed.accentColor),
       englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
       genreRows: sanitizeGenreRows(parsed.genreRows),
       preferredProviders: Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders.filter(isValidProvider) : DEFAULTS.preferredProviders,
       theme: isValidTheme(parsed.theme) ?? DEFAULTS.theme,
+      showDefaultProviders: sanitizeShowDefaultProviders(parsed.showDefaultProviders),
       };
   } catch {
     return DEFAULTS;
@@ -94,9 +131,45 @@ export function clearWatchHistory(): void {
 }
 
 /** Resolve the provider that should be used for a given media id.
- *  Priority: remembered (last successful) > global default. */
+ *  Priority: per-show pin > remembered (last successful) > default.
+ *  The pin must win: `rememberProvider` runs on every successful iframe load,
+ *  so a remembered value would otherwise shadow the user's choice. */
 export function resolveDefaultProvider(mediaId: string): ProviderId {
+  const settings = readSettings();
+  const pinned = settings.showDefaultProviders[mediaId]?.provider;
+  if (pinned) return pinned;
   const remembered = getRememberedProvider(mediaId);
   if (remembered) return remembered;
-  return readSettings().defaultProvider;
+  return settings.defaultProvider;
+}
+
+/** Pin a server for one show. `title` is shown in Settings. */
+export function setShowDefaultProvider(
+  mediaId: string,
+  provider: ProviderId,
+  title?: string,
+): AppSettings {
+  const next = readSettings();
+  next.showDefaultProviders = {
+    ...next.showDefaultProviders,
+    [mediaId]: { provider, ...(title ? { title } : {}) },
+  };
+  writeSettings(next);
+  return next;
+}
+
+/** Remove a per-show pin, falling back to the remembered/global server. */
+export function removeShowDefaultProvider(mediaId: string): AppSettings {
+  const next = readSettings();
+  if (!next.showDefaultProviders[mediaId]) return next;
+  const rest = { ...next.showDefaultProviders };
+  delete rest[mediaId];
+  next.showDefaultProviders = rest;
+  writeSettings(next);
+  return next;
+}
+
+/** Read the pinned server for a media id, or null if none is set. */
+export function getShowDefaultProvider(mediaId: string): ProviderId | null {
+  return readSettings().showDefaultProviders[mediaId]?.provider ?? null;
 }

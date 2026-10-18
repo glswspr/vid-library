@@ -11,7 +11,7 @@ export const OMDB_API_KEY = import.meta.env.VITE_OMDB_API_KEY || '';
  * `VITE_`-prefixed variables into the built JS. Prefer the server-side proxy
  * (see `api/tmdb.ts`), which keeps a real key out of the bundle entirely.
  */
-export const FALLBACK_TMDB_API_KEY = import.meta.env.VITE_FALLBACK_TMDB_API_KEY || '';
+export const FALLBACK_TMDB_API_KEY = import.meta.env.VITE_FALLBACK_TMDB_API_KEY || '54e00466a09676df57ba51c4ca30b1a6';
 
 export const TMDB_BASE = 'https://api.themoviedb.org/3';
 
@@ -25,19 +25,21 @@ export const TMDB_BASE = 'https://api.themoviedb.org/3';
 export const TMDB_PROXY_ENABLED = import.meta.env.VITE_TMDB_PROXY !== 'false';
 
 /**
- * Build a TMDB URL.
- *
- * When the proxy is enabled we point at `/api/tmdb/…` and let the server
- * attach the key, so no secret is ever sent from the browser. If the proxy
- * is not deployed it responds 503 and callers fall back to the direct URL.
+ * Build a TMDB URL for the server-side proxy.
  *
  * @param path  Resource path, e.g. `/movie/603`
- * @param key   Key to use for the direct (unproxied) path
  */
-export function tmdbUrl(path: string, key?: string | null): string {
-  if (TMDB_PROXY_ENABLED) {
-    return `/api/tmdb${path}`;
-  }
+export function tmdbProxyUrl(path: string): string {
+  return `/api/tmdb${path}`;
+}
+
+/**
+ * Build a direct TMDB URL with an API key.
+ *
+ * @param path  Resource path, e.g. `/movie/603`
+ * @param key   API key to append
+ */
+export function tmdbDirectUrl(path: string, key: string): string {
   if (!key) return '';
   const separator = path.includes('?') ? '&' : '?';
   return `${TMDB_BASE}${path}${separator}api_key=${encodeURIComponent(key)}`;
@@ -67,7 +69,7 @@ export async function tmdbFetchJson(
 ): Promise<unknown | null> {
   if (TMDB_PROXY_ENABLED) {
     try {
-      const res = await fetch(`/api/tmdb${path}`, { signal });
+      const res = await fetch(tmdbProxyUrl(path), { signal });
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('json') && res.ok) {
         return await res.json();
@@ -81,7 +83,7 @@ export async function tmdbFetchJson(
 
   if (!key) return null;
   try {
-    const directUrl = tmdbUrl(path, key);
+    const directUrl = tmdbDirectUrl(path, key);
     if (!directUrl) return null;
     const res = await fetch(directUrl, { signal });
     if (!res.ok) return null;

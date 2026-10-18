@@ -111,18 +111,24 @@ function readProviderMemory(): Record<string, ProviderId> {
   return out;
 }
 
-/** Best-guess server order: remembered-good first, then the rest. */
-export function getProviderFallbackOrder(): ProviderId[] {
-  const memory = readProviderMemory();
+/** Best-guess server order: the user's preferred list first, then servers that
+ *  worked for a title before, then the canonical list. */
+export function getProviderFallbackOrder(preferred: ProviderId[] = []): ProviderId[] {
   const ordered: ProviderId[] = [];
   const seen = new Set<ProviderId>();
-  for (const value of Object.values(memory)) {
-    if (seen.has(value)) continue;
-    ordered.push(value);
-    seen.add(value);
+  const add = (id: ProviderId) => {
+    if (seen.has(id)) return;
+    ordered.push(id);
+    seen.add(id);
+  };
+  for (const id of preferred) {
+    if (isProviderId(id)) add(id);
+  }
+  for (const value of Object.values(readProviderMemory())) {
+    add(value);
   }
   for (const id of VALID_PROVIDERS) {
-    if (!seen.has(id)) ordered.push(id);
+    add(id);
   }
   return ordered;
 }
@@ -264,10 +270,16 @@ export function saveWatchProgress(progress: WatchProgress): void {
   mutateProgress((items) => {
     const existing = items[key];
     // Merge with the stored entry so backfilled metadata (genre, rating,
-    // poster) survives partial updates from player events.
+    // poster, title) survives partial updates from player events.
+    const incomingTitle = progress.title;
+    const shouldPreserveExistingTitle =
+      !incomingTitle || incomingTitle === progress.id;
     items[key] = {
       ...existing,
       ...progress,
+      title: shouldPreserveExistingTitle
+        ? existing?.title ?? incomingTitle
+        : incomingTitle,
       posterUrl: progress.posterUrl || existing?.posterUrl,
       rating: progress.rating || existing?.rating,
       genre: progress.genre || existing?.genre,
@@ -330,6 +342,18 @@ export function updateProgressGenreForShow(id: string, genre: string): void {
   mutateProgress((items) => {
     for (const item of Object.values(items)) {
       if (item.id === id && !item.genre) item.genre = genre;
+    }
+  });
+}
+
+/** Persist a resolved title onto every stored progress entry of a title. */
+export function updateProgressTitle(id: string, title: string): void {
+  if (!title) return;
+  mutateProgress((items) => {
+    for (const item of Object.values(items)) {
+      if (item.id === id && (!item.title || item.title === id)) {
+        item.title = title;
+      }
     }
   });
 }

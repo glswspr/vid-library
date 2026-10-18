@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import type { WatchProgress, TVShowDetails, Episode } from '../types';
-import { getAllWatchProgress, updateProgressPoster, updateProgressRating, updateProgressGenreForShow, removeShowWatchProgress } from '../utils/storage';
-import { getPosterUrl, getRatingUrl, getGenre } from '../utils/posters';
+import { getAllWatchProgress, updateProgressPoster, updateProgressRating, updateProgressGenreForShow, removeShowWatchProgress, updateProgressTitle } from '../utils/storage';
+import { getPosterUrl, getRatingUrl, getGenre, getTitle } from '../utils/posters';
 import { getTVShowDetails } from '../services/catalog';
 import { Play, Clock, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
@@ -104,12 +104,6 @@ function findNextEpisode(
   return all[idx + 1] ?? null;
 }
 
-
-interface ContinueWatchingItem extends WatchProgress {
-  nextEpisode?: Episode | null;
-  showDetails?: TVShowDetails | null;
-}
-
 export const ContinueWatching: FC = () => {
   const [items, setItems] = useState<ContinueWatchingItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -165,6 +159,10 @@ export const ContinueWatching: FC = () => {
           if (!item.genre) {
             const genre = await getGenre(item.id, item.type);
             if (genre) updateProgressGenreForShow(item.id, genre);
+          }
+          if (!item.title || item.title === item.id) {
+            const title = await getTitle(item.id, item.type);
+            if (title) updateProgressTitle(item.id, title);
           }
         }),
       );

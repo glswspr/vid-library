@@ -7,7 +7,7 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { MoreLikeThis } from '../components/MoreLikeThis';
 import { Skeleton } from '../components/Skeleton';
 import { ArrowLeft, ChevronLeft, ChevronRight, Tv, Check, Bookmark, BookmarkCheck, Play, Eye, EyeOff, Calendar } from 'lucide-react';
-import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow } from '../utils/storage';
+import { getAllWatchProgress, getWatchProgress, isInWatchlist, toggleWatchlist, markEpisodeWatched, markEpisodeUnwatched, updateProgressGenreForShow, updateProgressTitle } from '../utils/storage';
 import { isTvDevice } from '../utils/tv';
 import { useEpisodeNavigation } from '../hooks/useEpisodeNavigation';
 import { WATCHED_THRESHOLD } from '../constants';
@@ -244,6 +244,9 @@ export const TVShowPage: FC = () => {
       setShow(data);
       setLoading(false);
       if (data.genre) updateProgressGenreForShow(data.id, data.genre);
+      if (data.title && data.title !== data.id) {
+        updateProgressTitle(data.id, data.title);
+      }
     }).catch(() => {
       setLoading(false);
     });
@@ -356,6 +359,7 @@ export const TVShowPage: FC = () => {
           media={show}
           season={currentSeason}
           episode={currentEpisode}
+          hasNextEpisode={!!(nextSeasonNum && nextEpisodeNum)}
           onAutoNext={() => {
             if (nextSeasonNum && nextEpisodeNum) handleNextEpisode();
           }}
