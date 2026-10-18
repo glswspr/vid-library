@@ -20,7 +20,7 @@ import {
 import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair, Pin } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
-import { resolveImdbToTmdb } from '../utils/tv';
+import { resolveTmdbFromImdb } from '../services/metadata';
 import { scrollToElement } from '../utils/scroll';
 import EndOfContentOverlay from './EndOfContentOverlay';
 
@@ -324,14 +324,18 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
     // TMDB IDs.
     if (TMDB_ID_PROVIDERS.includes(providerId)) {
       if (media.imdbId && !media.tmdbId) {
+        const imdbId = media.imdbId;
         ;(async () => {
-          const tmdbId = await resolveImdbToTmdb(media.imdbId as string);
-          if (!cancelled) setResolvedTmdbId(tmdbId);
+          // Cached resolver shared with the rest of the app. It needs the
+          // media type: the old helper always preferred the show bucket, so a
+          // movie could resolve to a same-numbered show.
+          const resolved = await resolveTmdbFromImdb(imdbId, media.type);
+          if (!cancelled) setResolvedTmdbId(resolved?.id ?? null);
         })();
       }
     }
     return () => { cancelled = true; };
-  }, [providerId, media.id, media.imdbId, media.tmdbId]);
+  }, [providerId, media.id, media.imdbId, media.tmdbId, media.type]);
 
   // Second: generate the embed URL using the resolved TMDB ID
   useEffect(() => {
