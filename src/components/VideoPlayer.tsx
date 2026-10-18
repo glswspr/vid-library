@@ -34,19 +34,6 @@ interface VideoPlayerProps {
   onAutoNext?: () => void;
 }
 
-const SERVER_BUTTONS: readonly { label: string; provider: ProviderId }[] = [
-  { label: 'Server 1', provider: 'vidrock' },
-  { label: 'Server 2', provider: 'vidapi' },
-  { label: 'Server 3', provider: 'videasy' },
-  { label: 'Server 4', provider: 'peachify' },
-  { label: 'Server 5', provider: 'vidsrc' },
-  { label: 'Server 6', provider: 'vidcore' },
-  { label: 'Server 7', provider: 'vidzee' },
-  { label: 'Server 8', provider: 'mapple' },
-  { label: 'Server 9', provider: 'm111' },
-  { label: 'Server 10', provider: 'streamx' },
-];
-
 const PROVIDER_NAMES: Record<ProviderId, string> = {
   videasy: 'Videasy',
   vidrock: 'VidRock',
@@ -135,8 +122,11 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   const manualOverrideRef = useRef(false);
   const overrideForIdRef = useRef<string>(media.id);
   const autoFallbackCountRef = useRef(0);
-  const currentServer =
-    SERVER_BUTTONS.find((b) => b.provider === providerId) ?? SERVER_BUTTONS[0];
+  // The server arrows walk the user's order, so the label and the arrows can
+  // never disagree with Settings.
+  const serverOrder = getProviderFallbackOrder(settings.preferredProviders);
+  const currentServerIndex = Math.max(0, serverOrder.indexOf(providerId));
+  const currentServerLabel = `Server ${currentServerIndex + 1}`;
 
   useEffect(() => {
     setHasError(false);
@@ -221,10 +211,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   }, []);
 
   const cycleServer = (dir: 1 | -1) => {
-    const idx = SERVER_BUTTONS.findIndex((b) => b.provider === providerId);
-    const next = SERVER_BUTTONS[(idx + dir + SERVER_BUTTONS.length) % SERVER_BUTTONS.length];
+    const idx = serverOrder.indexOf(providerId);
+    const next = serverOrder[(idx + dir + serverOrder.length) % serverOrder.length];
     autoFallbackCountRef.current = 0;
-    handleProviderChange(next.provider);
+    handleProviderChange(next);
   };
 
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -427,8 +417,8 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
         </button>
 
         <div className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-bold text-sm">
-          <span>{currentServer.label}</span>
-          <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[currentServer.provider]}</span>
+          <span>{currentServerLabel}</span>
+          <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[providerId]}</span>
         </div>
 
         <button
