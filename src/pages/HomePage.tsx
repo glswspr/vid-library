@@ -272,7 +272,7 @@ export const HomePage: FC = () => {
       {/* Recommendations (Trending Movies / Trending TV Shows) */}
       <Trending />
 
-      {/* Curated rows: Top Rated, New This Month, Because You Watched, Coming Soon, Genre rows */}
+      {/* Curated rows: Top Rated, Because You Watched, Genre rows */}
       <HomeRows />
     </div>
   );

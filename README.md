@@ -1,29 +1,30 @@
 # Vid Library — Personal Video Streaming Website
 
-A clean, lightweight, publicly accessible web application for browsing movies and TV shows and watching them using **VidRock** and **VidAPI** video embeds. Built as a zero-backend, pure static Single Page Application (SPA) designed for instant deployment to Cloudflare Pages, Vercel, or Netlify.
+A clean, lightweight, publicly accessible web application for browsing movies and TV shows and watching them through third-party video embeds. Built as a pure client-side Single Page Application (SPA) that deploys to Cloudflare Pages, Vercel, or Netlify.
 
 ---
 
 ## Key Features
 
-- **Dual Provider Embeds**: Support for **VidRock** (`vidrock.ru`) and **VidAPI** (`vidapi.ru`) with manual provider switching and clear fallback error UI.
+- **Ten embed servers**: VidRock, VidAPI, Videasy, Peachify, VidSrc, VidCore, VidZee, Mapple, 111Movies and StreamX, with manual switching, an editable fallback order, and automatic fallback when a server fails.
+- **Per-show server pin**: pin a server for one show and it is used every time you open that show.
 - **Deep-Link SPA Routing**: Shareable, direct-accessible URLs:
   - `/` (Catalog, Search, Continue Watching)
   - `/movie/{id}` (Movie player page)
   - `/tv/{id}` (TV show page)
   - `/tv/{id}/season/{season}/episode/{episode}` (Direct episode player page)
-- **Subtitle Selection**: Native language selector for **English** (`en`), **Swedish** (`sv`), and **Persian** (`fa`). Subtitle selection reloads the embed with position retention (`resumeAt`) and saves your language preference locally.
-- **Next Episode Navigation**: Seamless **Next Episode →** button handling intra-season (`S1E4 -> S1E5`) and inter-season (`S1E10 -> S2E1`) transitions while preserving provider and subtitle preferences.
-- **Continue Watching**: Automatically saves playback progress in browser `localStorage` via iframe `PLAYER_EVENT` listeners and presents a "Continue Watching" row on the homepage.
-- **Keyboard Shortcuts**: On TV show pages, `←` / `→` jump between episodes.
-- **Zero Account & Zero Backend Required**: 100% client-side application. No servers, VPS, databases, analytics, or user registration required.
+- **Next Episode Navigation**: Seamless **Next Episode →** button handling intra-season (`S1E4 -> S1E5`) and inter-season (`S1E10 -> S2E1`) transitions.
+- **Continue Watching**: Saves playback progress in browser `localStorage` through iframe `PLAYER_EVENT` listeners and presents a "Continue Watching" row on the homepage.
+- **Watch history and statistics**: A history page with search, filters, sorting, grid and list views, and an undo after clearing.
+- **Keyboard and remote**: Arrow keys move focus between controls; `F` toggles fullscreen on a detail page. Designed for Android TV browsers and D-pads.
+- **No account required**: 100% client-side application. No registration, no analytics, no cookies beyond `localStorage`. An optional serverless function proxies TMDB so an API key stays off the client.
 
 ---
 
 ## Local Development Setup
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (version 18.x or higher)
+- [Node.js](https://nodejs.org/) `^20.19` or `>=22.12` (the floor Vite 8 requires)
 - `npm` (comes with Node.js)
 
 ### Steps
@@ -163,16 +164,21 @@ VidAPI supports domain whitelisting for player embeds.
 
 ```
 vid-library/
+├── api/
+│   └── tmdb/[...path].ts  # Serverless TMDB proxy (Vercel)
+├── electron/              # Optional desktop shell (ad blocking, popup suppression)
 ├── public/
 │   ├── _redirects         # SPA routing rule for Cloudflare Pages / Netlify
-│   └── favicon.ico
+│   └── favicon.svg
+├── server/
+│   └── tmdbProxy.ts       # Shared proxy logic for the dev server and Vercel
 ├── src/
 │   ├── components/        # React UI components (Navbar, VideoPlayer, ContinueWatching, MediaCard)
-│   ├── pages/             # Route pages (HomePage, MoviePage, TVShowPage)
-│   ├── providers/         # VidRock & VidAPI provider abstractions
-│   ├── services/          # Catalog & search service
+│   ├── pages/             # Route pages (HomePage, MoviePage, TVShowPage, WatchHistoryPage)
+│   ├── providers/         # One file per embed server
+│   ├── services/          # Catalog, search, metadata and row services
 │   ├── types/             # TypeScript data models
-│   ├── utils/             # LocalStorage & helper utilities
+│   ├── utils/             # LocalStorage, settings and helper utilities
 │   ├── App.tsx            # React router definitions
 │   └── main.tsx           # Entry point
 ├── .env.example           # Example environment variables
