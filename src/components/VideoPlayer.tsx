@@ -16,7 +16,7 @@ import {
   setShowDefaultProvider,
   removeShowDefaultProvider,
 } from '../utils/settings';
-import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Star, Maximize, Minimize, Crosshair, Pin } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Check, Star, Maximize, Minimize, Crosshair, Pin } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
 import { resolveTmdbFromImdb } from '../services/metadata';
@@ -119,6 +119,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const serverMenuRef = useRef<HTMLDivElement>(null);
   const manualOverrideRef = useRef(false);
   const overrideForIdRef = useRef<string>(media.id);
   const autoFallbackCountRef = useRef(0);
@@ -127,6 +128,25 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
   const serverOrder = getProviderFallbackOrder(settings.preferredProviders);
   const currentServerIndex = Math.max(0, serverOrder.indexOf(providerId));
   const currentServerLabel = `Server ${currentServerIndex + 1}`;
+  const [serverMenuOpen, setServerMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!serverMenuOpen) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (serverMenuRef.current && !serverMenuRef.current.contains(e.target as Node)) {
+        setServerMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setServerMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [serverMenuOpen]);
 
   useEffect(() => {
     setHasError(false);
@@ -406,7 +426,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
           </div>
         </div>
       </div>
-      <div className="relative flex items-center gap-1.5 mb-3">
+      <div className="relative flex items-center gap-1.5 mb-3" ref={serverMenuRef}>
         <button
           type="button"
           onClick={() => cycleServer(-1)}
@@ -416,10 +436,47 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <div className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 font-bold text-sm">
+        <button
+          type="button"
+          onClick={() => setServerMenuOpen((o) => !o)}
+          aria-label="Choose server"
+          aria-haspopup="menu"
+          aria-expanded={serverMenuOpen}
+          className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-sm cursor-pointer"
+        >
           <span>{currentServerLabel}</span>
           <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[providerId]}</span>
-        </div>
+          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${serverMenuOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {serverMenuOpen && (
+          <div
+            role="menu"
+            className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-72 overflow-y-auto rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-1"
+          >
+            {serverOrder.map((id, index) => (
+              <button
+                key={id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={id === providerId}
+                onClick={() => {
+                  if (id !== providerId) handleProviderChange(id);
+                  setServerMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm cursor-pointer ${
+                  id === providerId
+                    ? 'bg-cyan-500/15 text-cyan-300'
+                    : 'text-slate-200 hover:bg-slate-700/60'
+                }`}
+              >
+                <span className="text-xs text-slate-500 w-14 shrink-0">Server {index + 1}</span>
+                <span className="font-semibold">{PROVIDER_NAMES[id]}</span>
+                {id === providerId && <Check className="w-4 h-4 ml-auto" />}
+              </button>
+            ))}
+          </div>
+        )}
 
         <button
           type="button"
