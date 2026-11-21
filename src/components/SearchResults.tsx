@@ -1,7 +1,7 @@
 import type { FC, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SearchResult } from '../services/catalog';
-import { Film, Tv, Hash, Star } from 'lucide-react';
+import { Film, Tv, Hash, Star, User } from 'lucide-react';
 
 interface SearchResultsProps {
   results: SearchResult[];
@@ -13,6 +13,11 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
   const navigate = useNavigate();
 
   const handleClick = (result: SearchResult) => {
+    if (result.type === 'person') {
+      // Re-search with person's name to show their filmography
+      onSelect();
+      return;
+    }
     const targetUrl =
       result.type === 'movie'
         ? `/movie/${result.imdbId}`
@@ -42,6 +47,63 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
       </span>
       {results.map((result, index) => {
         const isSelected = index === selectedIndex;
+
+        if (result.type === 'person') {
+          return (
+            <div
+              key={result.imdbId}
+              role="option"
+              aria-selected={isSelected}
+              tabIndex={0}
+              onClick={() => handleClick(result)}
+              onKeyDown={(e) => handleKeyDown(e, result)}
+              className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors border-b border-slate-800/50 last:border-b-0 ${
+                isSelected
+                  ? 'bg-cyan-500/15 border-l-4 border-l-cyan-400 ring-1 ring-cyan-500/30'
+                  : 'hover:bg-slate-800/60 focus-visible:bg-slate-800/80 focus-visible:ring-2 focus-visible:ring-cyan-500/40 border-l-4 border-l-transparent'
+              }`}
+            >
+              {/* Poster/avatar */}
+              <div className="w-14 h-20 rounded-lg overflow-hidden bg-slate-800 shrink-0 flex items-center justify-center border border-slate-700/50">
+                {result.posterUrl ? (
+                  <img
+                    src={result.posterUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <User className="w-6 h-6 text-slate-600" />
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-100 truncate">{result.title}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-400">
+                    <User className="w-3.5 h-3.5" />
+                    {result.known_for_department || 'Person'}
+                  </span>
+                </div>
+
+                {result.known_for && result.known_for.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {result.known_for.slice(0, 3).map((kf, ki) => (
+                      <span key={kf.imdbId} className="text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded border border-slate-700/50">
+                        {kf.title} ({kf.type === 'movie' ? 'Movie' : 'TV'})
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {isSelected && (
+                <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 shadow-lg shadow-cyan-400/50" />
+              )}
+            </div>
+          );
+        }
+
         return (
           <div
             key={result.imdbId}
@@ -101,7 +163,7 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-mono mt-1">
-                IMDb: {result.imdbId}
+                IMDB: {result.imdbId}
               </p>
             </div>
 
