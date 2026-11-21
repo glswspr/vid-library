@@ -10,6 +10,8 @@ export interface SearchResult {
   rating?: string;
   known_for_department?: string;
   known_for?: SearchResult[];
+  /** TMDB entity id for person credits lookups */
+  tmdbId?: number;
 }
 
 /**
@@ -23,12 +25,73 @@ function isAbort(e: unknown): boolean {
 export { isAbort };
 
 /**
- * Search for movies and TV shows by title.
+ * Genre alias map for common shorthands (case-insensitive).
+ */
+const GENRE_ALIASES: Record<string, string> = {
+  'sci-fi': 'Science Fiction',
+  'sci fi': 'Science Fiction',
+  'scifi': 'Science Fiction',
+  'action': 'Action',
+  'adventure': 'Adventure',
+  'animation': 'Animation',
+  'anime': 'Animation',
+  'comedy': 'Comedy',
+  'crime': 'Crime',
+  'documentary': 'Documentary',
+  'drama': 'Drama',
+  'family': 'Family',
+  'fantasy': 'Fantasy',
+  'history': 'History',
+  'horror': 'Horror',
+  'music': 'Music',
+  'musical': 'Music',
+  'mystery': 'Mystery',
+  'romance': 'Romance',
+  'romantic': 'Romance',
+  'science fiction': 'Science Fiction',
+  'thriller': 'Thriller',
+  'war': 'War',
+  'western': 'Western',
+  'reality': 'Reality',
+  'reality tv': 'Reality',
+  'talk': 'Talk',
+  'talk show': 'Talk',
+  'news': 'News',
+  'soap': 'Soap',
+  'kids': 'Family',
+  'children': 'Family',
+};
+
+/**
+ * Try to match `query` against a known genre name or alias.
+ * Returns the genre id if found, undefined otherwise.
+ */
+function matchGenreName(query: string, genres: { id: number; name: string }[]): number | undefined {
+  const normalized = query.toLowerCase().trim();
+  // Direct match first
+  const direct = genres.find(g => g.name.toLowerCase() === normalized);
+  if (direct) return direct.id;
+  // Alias lookup
+  const alias = GENRE_ALIASES[normalized];
+  if (alias) {
+    const aliased = genres.find(g => g.name.toLowerCase() === alias.toLowerCase());
+    if (aliased) return aliased.id;
+  }
+  return undefined;
+}
+
+/**
+ * Search for movies, TV shows, people, genres, and characters.
  *
- * Primary: TMDB search/multi (rich results incl. posters; works without a
- * user key via the fallback key). Fallback: Wikidata (free, CC0, CORS-friendly),
- * then OMDb (requires a key). Each step is isolated so a failure never breaks
- * the next one.
+ * Order:
+ *   1. TMDB search/multi — richest results (posters, ratings, people)
+ *   2. Wikidata — free, CORS-friendly, no key
+ *   3. OMDb — requires free API key
+ *   4. Genre discover — if the query is a genre name/alias, return popular
+ *      movies/TV of that genre (only after title search, so exact titles win)
+ *   5. Wikidata entity search — characters, landmarks, etc.
+ *
+ * Each step is isolated so a failure never breaks the next one.
  *
  * `signal` aborts the in-flight request so a newer keystroke supersedes it.
  */
@@ -36,25 +99,11 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
   const cleanQuery = query.trim();
   if (!cleanQuery || cleanQuery.length < 2) return [];
 
-  // 0. Genre detection — if query matches a known genre, use discover
-  try {
-    const genres = await getMovieGenres();
-    const matchedGenre = genres.find(g => g.name.toLowerCase() === cleanQuery.toLowerCase());
-    if (matchedGenre) {
-      const discoverResults = await searchDiscoverByGenre(matchedGenre.id, signal);
-      if (discoverResults.length > 0) return discoverResults;
-      // Fall through to normal search if discover returns nothing
-    }
-  } catch (e) {
-    if (isAbort(e)) throw e;
-    /* ignore genre detection errors */
-  }
-
-  // 1. TMDB — richest results incl. posters
+  // 1. TMDB — richest results incl. posters (title search first)
   const tmdbResults = await searchTmdb(cleanQuery, signal);
   if (tmdbResults.length > 0) return tmdbResults;
 
-  // 2. Wikidata — free, CORS-friendly, no key
+  // 2. Wikidata — free, CC0 data, CORS-friendly
   const wikidataResults = await searchWikidata(cleanQuery, signal);
   if (wikidataResults.length > 0) return wikidataResults;
 
@@ -62,7 +111,22 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
   const omdbResults = await searchOmdb(cleanQuery, signal);
   if (omdbResults.length > 0) return omdbResults.slice(0, 15);
 
-  // 4. Wikidata entity search (characters, etc.) — last resort
+  // 4. Genre discover — if the query is a genre name or alias, fetch
+  //    popular movies/TV of that genre (after title search so exact
+  //    titles like "Action" or "Horror" win over genre lists).
+  try {
+    const genres = await getMovieGenres();
+    const genreId = matchGenreName(cleanQuery, genres);
+    if (genreId !== undefined) {
+      const discoverResults = await searchDiscoverByGenre(genreId, signal);
+      if (discoverResults.length > 0) return discoverResults;
+    }
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    /* ignore genre detection errors */
+  }
+
+  // 5. Wikidata entity search (characters, landmarks, etc.) — last resort
   const entityResults = await searchWikidataEntities(cleanQuery, signal);
   if (entityResults.length > 0) return entityResults;
 
@@ -83,22 +147,112 @@ async function searchDiscoverByGenre(genreId: number, signal?: AbortSignal): Pro
     });
     if (tmdbKey) params.set('api_key', tmdbKey);
 
-    const res = await fetch(tmdbDirectUrl(`/discover/movie?${params.toString()}`, tmdbKey), { signal });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const items = (data.results || []).slice(0, 15);
+    // Fetch both movies and TV for the genre (TMDB genre IDs are shared)
+    const [movieRes, tvRes] = await Promise.all([
+      fetch(tmdbDirectUrl(`/discover/movie?${params.toString()}`, tmdbKey), { signal }),
+      fetch(tmdbDirectUrl(`/discover/tv?${params.toString()}`, tmdbKey), { signal }),
+    ]);
+    if (!movieRes.ok && !tvRes.ok) return [];
 
-    return items.map((item: any) => ({
-      imdbId: item.id?.toString().startsWith('tt') ? item.id : `tmdb:${item.id}`,
-      title: item.title || 'Untitled',
-      year: (item.release_date || '').substring(0, 4) || undefined,
-      type: 'movie' as const,
-      posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
-      rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
-    }));
+    const movieData = movieRes.ok ? await movieRes.json() : { results: [] };
+    const tvData = tvRes.ok ? await tvRes.json() : { results: [] };
+
+    const movieItems = (movieData.results || []).slice(0, 8);
+    const tvItems = (tvData.results || []).slice(0, 8);
+
+    const results: SearchResult[] = [];
+
+    // Process movies
+    for (const item of movieItems) {
+      let imdbId: string | undefined;
+      try {
+        const extRes = await fetch(tmdbDirectUrl(`/movie/${item.id}/external_ids`, tmdbKey), { signal });
+        if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
+      } catch (e) {
+        if (isAbort(e)) throw e;
+        /* skip */
+      }
+      if (!imdbId) continue;
+      results.push({
+        imdbId,
+        title: item.title || 'Untitled',
+        year: (item.release_date || '').substring(0, 4) || undefined,
+        type: 'movie' as const,
+        posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
+        rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
+      });
+    }
+
+    // Process TV shows
+    for (const item of tvItems) {
+      let imdbId: string | undefined;
+      try {
+        const extRes = await fetch(tmdbDirectUrl(`/tv/${item.id}/external_ids`, tmdbKey), { signal });
+        if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
+      } catch (e) {
+        if (isAbort(e)) throw e;
+        /* skip */
+      }
+      if (!imdbId) continue;
+      results.push({
+        imdbId,
+        title: item.name || 'Untitled',
+        year: (item.first_air_date || '').substring(0, 4) || undefined,
+        type: 'tv' as const,
+        posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
+        rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
+      });
+    }
+
+    return results;
   } catch (e) {
     if (isAbort(e)) throw e;
     console.warn('Genre discover search failed:', e);
+    return [];
+  }
+}
+
+/**
+ * Fetch combined credits for a person (movies + TV) via TMDB.
+ * Returns SearchResult[] for their filmography, each with a valid IMDb id.
+ */
+export async function searchPersonCredits(personTmdbId: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!tmdbKey || !canUseTmdb(tmdbKey)) return [];
+
+  try {
+    const res = await fetch(tmdbDirectUrl(`/person/${personTmdbId}/combined_credits`, tmdbKey), { signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const cast = (data.cast || []).slice(0, 15);
+
+    // Resolve IMDb IDs for credits in parallel
+    const results: SearchResult[] = [];
+    const batch = cast.slice(0, 10);
+    for (const credit of batch) {
+      const mediaType = credit.media_type === 'tv' ? 'tv' : 'movie';
+      let imdbId: string | undefined;
+      try {
+        const extRes = await fetch(tmdbDirectUrl(`/${mediaType}/${credit.id}/external_ids`, tmdbKey), { signal });
+        if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
+      } catch (e) {
+        if (isAbort(e)) throw e;
+        /* skip */
+      }
+      if (!imdbId) continue;
+      results.push({
+        imdbId,
+        title: credit.title || credit.name || 'Untitled',
+        year: (credit.release_date || credit.first_air_date || '').substring(0, 4) || undefined,
+        type: mediaType as 'movie' | 'tv',
+        posterUrl: credit.poster_path ? `https://image.tmdb.org/t/p/w92${credit.poster_path}` : undefined,
+        rating: credit.vote_average ? credit.vote_average.toFixed(1) : undefined,
+      });
+    }
+    return results;
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    console.warn('Person credits search failed:', e);
     return [];
   }
 }
@@ -127,6 +281,7 @@ async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<Sea
           imdbId: `tmdb_person:${item.id}`,
           title: item.name || 'Unknown',
           type: 'person',
+          tmdbId: item.id,
           known_for_department: item.known_for_department,
           known_for: item.known_for?.slice(0, 3).map((kf: any) => ({
             imdbId: kf.id ? `tmdb:${kf.id}` : 'unknown',
@@ -265,7 +420,9 @@ async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal):
       let year: string | undefined;
 
       // Try to get associated work (P361 = part of, P1441 = present in work)
-      const partOf = claims.P361 || claims.P1441 || [];
+      // Check both: characters often have P361 (franchise) which may lack an
+      // IMDb ID, plus P1441 (specific film/episode) which usually has one.
+      const partOf = [...(claims.P361 || []), ...(claims.P1441 || [])];
       for (const stmt of partOf) {
         const workQid = stmt?.mainsnak?.datavalue?.value?.id;
         if (workQid) {
@@ -278,51 +435,48 @@ async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal):
               const workClaims = workData?.entities?.[workQid]?.claims;
               const imdbClaim = workClaims?.P345;
               if (imdbClaim) {
-                imdbId = imdbClaim[0]?.mainsnak?.datavalue?.value;
-              }
-              // Determine type from work's instance of
-              const workInstanceOf = workClaims?.P31 || [];
-              for (const wStmt of workInstanceOf) {
-                const qid = wStmt?.mainsnak?.datavalue?.value?.id;
-                if (qid === 'Q5398426' || qid === 'Q15416' || qid === 'Q254440') {
-                  type = 'tv';
-                  break;
-                }
-                if (qid === 'Q11424' || qid === 'Q24869') {
-                  type = 'movie';
-                  break;
-                }
-              }
-              // Get year from work
-              const workPubDate = workClaims?.P577 || workClaims?.P580;
-              if (workPubDate) {
-                const rawTime = workPubDate[0]?.mainsnak?.datavalue?.value?.time;
-                if (rawTime) {
-                  const match = (rawTime as string).match(/^\+?(\d{4})/);
-                  if (match) year = match[1];
+                const potentialId = imdbClaim[0]?.mainsnak?.datavalue?.value;
+                if (potentialId && (potentialId as string).startsWith('tt')) {
+                  imdbId = potentialId as string;
+
+                  // Determine type
+                  const instanceOf = workClaims?.P31 || [];
+                  for (const stmt2 of instanceOf) {
+                    const qid = stmt2?.mainsnak?.datavalue?.value?.id;
+                    if (qid === 'Q5398426' || qid === 'Q15416') {
+                      type = 'tv';
+                      break;
+                    }
+                  }
+
+                  // Extract year
+                  const pubClaim = workClaims?.P577;
+                  if (pubClaim) {
+                    const rawTime = pubClaim[0]?.mainsnak?.datavalue?.value?.time;
+                    if (rawTime) {
+                      const match = (rawTime as string).match(/^\+?(\d{4})/);
+                      if (match) year = match[1];
+                    }
+                  }
+
+                  break; // Found a valid work with IMDb ID
                 }
               }
             }
-          } catch { /* ignore */ }
+          } catch (e) {
+            if (isAbort(e)) throw e;
+            /* skip individual work lookups */
+          }
         }
       }
 
-      // If no associated work found, use entity's own IMDb ID if available
-      if (!imdbId) {
-        const entityImdb = claims.P345;
-        if (entityImdb) {
-          imdbId = entityImdb[0]?.mainsnak?.datavalue?.value;
-        }
-      }
-
-      if (!imdbId || !(imdbId as string).startsWith('tt')) continue;
+      if (!imdbId) continue;
 
       results.push({
-        imdbId: imdbId as string,
-        title: entity.label || 'Unknown Character',
+        imdbId,
+        title: entity.label || entity.label || entity.title || 'Untitled',
         year,
         type,
-        posterUrl: undefined,
       });
     }
 
@@ -335,34 +489,25 @@ async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal):
 }
 
 async function searchOmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
+  // OMDb does not have a multi-result search API: `&s=` returns a list of
+  // { Title, Year, imdbID, Type, Poster } which is exactly what we need.
   if (!OMDB_API_KEY) return [];
 
   try {
-    const res = await fetch(
-      `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&s=${encodeURIComponent(cleanQuery)}`,
-      { signal },
-    );
+    const params = new URLSearchParams({ s: cleanQuery, apikey: OMDB_API_KEY, type: 'movie' });
+    const res = await fetch(`https://www.omdbapi.com/?${params.toString()}`, { signal });
     if (!res.ok) return [];
 
     const data = await res.json();
-    if (data.Response !== 'True' || !Array.isArray(data.Search)) return [];
+    if (data.Error) return [];
 
-    const results: SearchResult[] = [];
-    for (const item of data.Search) {
-      const imdbId = item.imdbID;
-      if (!imdbId || !imdbId.startsWith('tt')) continue;
-      const type = item.Type === 'movie' ? 'movie' as const
-        : item.Type === 'series' ? 'tv' as const : null;
-      if (!type) continue;
-      results.push({
-        imdbId,
-        title: item.Title || 'Untitled',
-        year: item.Year || undefined,
-        type,
-        posterUrl: item.Poster && item.Poster !== 'N/A' ? item.Poster : undefined,
-      });
-    }
-    return results;
+    return (data.Search || []).map((item: any) => ({
+      imdbId: item.imdbID,
+      title: item.Title,
+      year: item.Year?.substring(0, 4),
+      type: (item.Type === 'series' ? 'tv' : 'movie') as 'movie' | 'tv',
+      posterUrl: item.Poster && item.Poster !== 'N/A' ? item.Poster : undefined,
+    }));
   } catch (e) {
     if (isAbort(e)) throw e;
     console.warn('OMDb search failed:', e);

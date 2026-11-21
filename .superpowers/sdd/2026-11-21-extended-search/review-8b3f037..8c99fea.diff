@@ -1,0 +1,1722 @@
+# Review package: 8b3f037..8c99fea
+
+## Commits
+8c99fea test(search): add comprehensive extended search tests
+9419e22 feat(search): handle person selection by re-searching
+f5932a0 feat(search): render person results in SearchResults
+481f834 feat(search): add Wikidata entity search for characters
+0dd4495 feat(search): add genre detection and discover search
+30cec64 feat(search): include person results in TMDB search
+6a6b194 feat(search): extend SearchResult with person type
+
+## Files changed
+ .../sdd/2026-11-21-extended-search/progress.md     |   8 +
+ .../plans/2026-11-21-extended-search.md            | 685 +++++++++++++++++++++
+ ld-extension/background.js                         |  90 +++
+ ld-extension/bridge.html                           |  53 ++
+ ld-extension/manifest.json                         |  16 +
+ src/components/Navbar.tsx                          |  44 +-
+ src/components/SearchResults.test.tsx              |  29 +
+ src/components/SearchResults.tsx                   |  68 +-
+ src/pages/HomePage.tsx                             |  44 +-
+ src/services/search.test.ts                        | 159 +++++
+ src/services/search.ts                             | 173 +++++-
+ vitest.config.ts                                   |   2 +-
+ 12 files changed, 1343 insertions(+), 28 deletions(-)
+
+## Diff
+diff --git a/.superpowers/sdd/2026-11-21-extended-search/progress.md b/.superpowers/sdd/2026-11-21-extended-search/progress.md
+new file mode 100644
+index 0000000..c532b14
+--- /dev/null
++++ b/.superpowers/sdd/2026-11-21-extended-search/progress.md
+@@ -0,0 +1,8 @@
++# SDD ledger - plan: docs/superpowers/plans/2026-11-21-extended-search.md
++Base: 8b3f037
++Task 1: complete (commits 8b3f037..6a6b194, tests: npm test -- src/services/search.test.ts ΓåÆ 1/1 passed)
++Task 2: complete (commits 6a6b194..30cec64, tests: npm test -- src/services/search.test.ts ΓåÆ 2/2 passed)
++Task 3: complete (commits 30cec64..0dd4495, tests: npm test -- src/services/search.test.ts ΓåÆ 3/3 passed)
++Task 4: complete (commits 0dd4495..481f834, tests: npm test -- src/services/search.test.ts ΓåÆ 4/4 passed)
++Task 5: complete (commits 481f834..f5932a0, tests: npm test -- src/components/SearchResults.test.tsx ΓåÆ 1/1 passed)
++Task 6: complete (commits f5932a0..9419e22, tests: npm test ΓåÆ 35/35 passed)
+diff --git a/docs/superpowers/plans/2026-11-21-extended-search.md b/docs/superpowers/plans/2026-11-21-extended-search.md
+new file mode 100644
+index 0000000..c347a54
+--- /dev/null
++++ b/docs/superpowers/plans/2026-11-21-extended-search.md
+@@ -0,0 +1,685 @@
++# Extended Search Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** Extend the search functionality to accept actors, directors, genres, and character names in addition to movie/TV titles.
++
++**Architecture:** Extend the existing `SearchResult` type to include a `person` type (for actors/directors), add genre detection that routes to TMDB discover with `with_genres`, and add Wikidata entity search as a fallback for character names. The search flow remains a single entry point (`searchByTitle`) that tries multiple strategies in sequence.
++
++**Tech Stack:** TypeScript, React, Vite, Vitest, TMDB API, Wikidata API, OMDb API
++
++**Spec:** This plan implements the design discussed in the conversation (Approach 1: extend SearchResult + genre detection + Wikidata character fallback).
++
++## Global Constraints
++
++- Existing `searchByTitle(query: string, signal?: AbortSignal): Promise<SearchResult[]>` signature must not change
++- `SearchResult` type exported from `src/services/catalog.ts` (re-exported from `search.ts`)
++- `SearchResults` component in `src/components/SearchResults.tsx` renders results
++- `Navbar` and `HomePage` both call `searchByTitle` via `performSearch`
++- TMDB genre catalog already cached via `getMovieGenres()` in `rows.ts`
++- MIN_SEARCH_QUERY_LENGTH = 2 (constants.ts)
++
++## Review Focus
++
++| Input / Condition | Expected Behavior |
++|-------------------|-------------------|
++| Query is a person name (e.g., "Tom Hanks") | Returns person results with `known_for_department` and `known_for` titles; clicking re-searches with that name |
++| Query matches a genre name (e.g., "sci-fi", "horror") | Returns movies/TV of that genre via TMDB discover with `with_genres` |
++| Query is a character name (e.g., "Jon Snow", "Darth Vader") | Returns matching character entities from Wikidata with title/year/type; clicking navigates to that title |
++| Query is an IMDb ID (already works) | Continues to resolve via Wikidata/TMDB as before |
++| Search returns mixed types (movies, TV, people) | SearchResults renders each with appropriate badge and action |
++
++---
++
++### Task 1: Extend SearchResult type with person support
++
++**Files:**
++- Modify: `src/services/search.ts:3-10`
++- Modify: `src/services/catalog.ts:19-20` (re-export)
++
++**Interfaces:**
++- Consumes: None (base type change)
++- Produces: Extended `SearchResult` interface with `type: 'movie' | 'tv' | 'person'`, optional `known_for_department`, `known_for`
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// src/services/search.test.ts (new file)
++import { describe, it, expect } from 'vitest';
++import { searchByTitle } from './search';
++
++describe('searchByTitle extended types', () => {
++  it('SearchResult type includes person with known_for_department', () => {
++    // Type test: SearchResult should accept 'person' type
++    const personResult: SearchResult = {
++      imdbId: 'nm0000123',
++      title: 'Tom Hanks',
++      type: 'person',
++      known_for_department: 'Acting',
++      known_for: [{ imdbId: 'tt0120737', title: 'The Shawshank Redemption', type: 'movie' }]
++    };
++    expect(personResult.type).toBe('person');
++    expect(personResult.known_for_department).toBe('Acting');
++  });
++});
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: FAIL (file doesn't exist, SearchResult doesn't have person type)
++
++- [ ] **Step 3: Implement extended SearchResult in `src/services/search.ts`**
++
++```typescript
++// In src/services/search.ts, replace lines 3-10:
++export interface SearchResult {
++  imdbId: string;
++  title: string;
++  year?: string;
++  type: 'movie' | 'tv' | 'person';
++  posterUrl?: string;
++  rating?: string;
++  known_for_department?: string;
++  known_for?: SearchResult[];
++}
++```
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add src/services/search.ts src/services/search.test.ts
++git commit -m "feat(search): extend SearchResult with person type"
++```
++
++---
++
++### Task 2: Update searchTmdb to include person results
++
++**Files:**
++- Modify: `src/services/search.ts:51-94` (searchTmdb function)
++- Test: `src/services/search.test.ts`
++
++**Interfaces:**
++- Consumes: Extended `SearchResult` from Task 1
++- Produces: `searchTmdb` now returns person results alongside movie/tv
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// In src/services/search.test.ts (add to existing describe)
++it('searchTmdb includes person results when available', async () => {
++  // Mock fetch to return TMDB multi-search response with person
++  global.fetch = vi.fn().mockResolvedValue({
++    ok: true,
++    json: async () => ({
++      results: [
++        { media_type: 'person', id: 123, name: 'Tom Hanks', known_for_department: 'Acting', known_for: [], profile_path: '/path.jpg' },
++        { media_type: 'movie', id: 456, title: 'Test Movie', poster_path: '/movie.jpg' }
++      ]
++    })
++  });
++  
++  const results = await searchTmdb('Tom Hanks');
++  const person = results.find(r => r.type === 'person');
++  expect(person).toBeDefined();
++  expect(person?.title).toBe('Tom Hanks');
++  expect(person?.known_for_department).toBe('Acting');
++});
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: FAIL (searchTmdb filters out person results)
++
++- [ ] **Step 3: Implement person result handling in `searchTmdb`**
++
++In `searchTmdb` function (around line 62-64), change the filter to include `person`:
++```typescript
++const items = (data.results || []).filter(
++  (item: any) => item.media_type === 'movie' || item.media_type === 'tv' || item.media_type === 'person'
++);
++```
++
++Then handle person items in the results loop (after line 68):
++```typescript
++for (const item of items.slice(0, 8)) {
++  if (item.media_type === 'person') {
++    results.push({
++      imdbId: `nm${item.id}`, // TMDB person IDs are numeric; prefix with nm for consistency
++      title: item.name || 'Unknown',
++      type: 'person',
++      known_for_department: item.known_for_department,
++      known_for: item.known_for?.slice(0, 3).map((kf: any) => ({
++        imdbId: kf.id?.startsWith('tt') ? kf.id : `tmdb:${kf.id}`,
++        title: kf.title || kf.name || 'Unknown',
++        type: kf.media_type === 'movie' ? 'movie' : 'tv',
++        posterUrl: kf.poster_path ? `https://image.tmdb.org/t/p/w92${kf.poster_path}` : undefined,
++      })) || [],
++      posterUrl: item.profile_path ? `https://image.tmdb.org/t/p/w92${item.profile_path}` : undefined,
++    });
++    continue;
++  }
++  // ... existing movie/tv handling
++}
++```
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add src/services/search.ts src/services/search.test.ts
++git commit -m "feat(search): include person results in TMDB search"
++```
++
++---
++
++### Task 3: Add genre detection and discover search
++
++**Files:**
++- Modify: `src/services/search.ts:32-49` (searchByTitle function)
++- Modify: `src/services/rows.ts` (import getMovieGenres)
++- Test: `src/services/search.test.ts`
++
++**Interfaces:**
++- Consumes: `getMovieGenres()` from `rows.ts`, genre catalog cached in localStorage
++- Produces: `searchByTitle` checks query against genre names before TMDB title search
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// In src/services/search.test.ts (add)
++it('searchByTitle detects genre query and uses discover', async () => {
++  // Mock getMovieGenres to return known genres
++  vi.mock('./rows', () => ({
++    getMovieGenres: async () => [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }]
++  }));
++  
++  // Mock fetch for discover endpoint
++  global.fetch = vi.fn().mockResolvedValue({
++    ok: true,
++    json: async () => ({ results: [{ id: 123, title: 'Action Movie', media_type: 'movie', poster_path: '/action.jpg' }] })
++  });
++  
++  const results = await searchByTitle('action');
++  expect(results.length).toBeGreaterThan(0);
++  expect(results[0].type).toBe('movie');
++});
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: FAIL (genre detection not implemented)
++
++- [ ] **Step 3: Implement genre detection in `searchByTitle`**
++
++Add at the top of `searchByTitle` (after line 33):
++```typescript
++// Check if query matches a genre name
++const genres = await getMovieGenres();
++const matchedGenre = genres.find(g => g.name.toLowerCase() === cleanQuery.toLowerCase());
++if (matchedGenre) {
++  const discoverResults = await searchDiscoverByGenre(matchedGenre.id, signal);
++  if (discoverResults.length > 0) return discoverResults;
++  // Fall through to normal search if discover returns nothing
++}
++```
++
++Add new helper function `searchDiscoverByGenre` (before `searchTmdb`):
++```typescript
++async function searchDiscoverByGenre(genreId: number, signal?: AbortSignal): Promise<SearchResult[]> {
++  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
++  if (!canUseTmdb(tmdbKey)) return [];
++
++  try {
++    const params = new URLSearchParams({
++      sort_by: 'popularity.desc',
++      with_genres: String(genreId),
++      'vote_average.gte': '6.0',
++      'vote_count.gte': '500',
++      page: '1',
++    });
++    if (tmdbKey) params.set('api_key', tmdbKey);
++
++    const res = await fetch(tmdbDirectUrl(`/discover/movie?${params.toString()}`, tmdbKey), { signal });
++    if (!res.ok) return [];
++    const data = await res.json();
++    const items = (data.results || []).slice(0, 15);
++    
++    return items.map((item: any) => ({
++      imdbId: item.id?.startsWith('tt') ? item.id : `tmdb:${item.id}`,
++      title: item.title || 'Untitled',
++      year: (item.release_date || '').substring(0, 4) || undefined,
++      type: 'movie' as const,
++      posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
++      rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
++    }));
++  } catch (e) {
++    if (isAbort(e)) throw e;
++    console.warn('Genre discover search failed:', e);
++    return [];
++  }
++}
++```
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add src/services/search.ts src/services/search.test.ts
++git commit -m "feat(search): add genre detection and discover search"
++```
++
++---
++
++### Task 4: Add Wikidata character/entity search fallback
++
++**Files:**
++- Modify: `src/services/search.ts:32-49` (searchByTitle function, add as last fallback)
++- Test: `src/services/search.test.ts`
++
++**Interfaces:**
++- Consumes: Wikidata `wbsearchentities` API
++- Produces: Character/entity results as `SearchResult` with type derived from Wikidata instance-of
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// In src/services/search.test.ts (add)
++it('searchByTitle falls back to Wikidata entity search for characters', async () => {
++  // Mock all previous search strategies to return empty
++  // Mock Wikidata search to return a character entity
++  global.fetch = vi.fn()
++    .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [] }) }) // TMDB
++    .mockResolvedValueOnce({ ok: true, json: async () => ({ search: [] }) }) // Wikidata title
++    .mockResolvedValueOnce({ ok: true, json: async () => ({ Response: 'False' }) }) // OMDb
++    .mockResolvedValueOnce({ 
++      ok: true, 
++      json: async () => ({ 
++        search: [{ id: 'Q123', label: 'Jon Snow', description: 'Game of Thrones character' }] 
++      }) 
++    }) // Wikidata entity search
++    .mockResolvedValueOnce({ 
++      ok: true, 
++      json: async () => ({ 
++        entities: { 
++          Q123: { 
++            claims: { 
++              P31: [{ mainsnak: { datavalue: { value: { id: 'Q5' } } } }], // human
++              P361: [{ mainsnak: { datavalue: { value: { id: 'Q12345' } } } }] // part of Game of Thrones
++            } 
++          } 
++        } 
++      }) 
++    }); // Wikidata entity claims
++  
++  const results = await searchByTitle('Jon Snow');
++  const character = results.find(r => r.title === 'Jon Snow');
++  expect(character).toBeDefined();
++});
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: FAIL (Wikidata entity search not implemented)
++
++- [ ] **Step 3: Implement Wikidata entity search in `searchByTitle`**
++
++Add after OMDb fallback (around line 46), before `return []`:
++```typescript
++// 4. Wikidata entity search (characters, etc.) ΓÇö last resort
++const entityResults = await searchWikidataEntities(cleanQuery, signal);
++if (entityResults.length > 0) return entityResults;
++
++return [];
++```
++
++Add new helper function `searchWikidataEntities` (after `searchWikidata`):
++```typescript
++async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
++  try {
++    // Step 1: search for matching Wikidata entities
++    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(cleanQuery)}&language=en&limit=10&format=json&origin=*`;
++    const searchRes = await fetch(searchUrl, { signal });
++    if (!searchRes.ok) return [];
++    const searchData = await searchRes.json();
++    const entities = searchData?.search || [];
++    if (entities.length === 0) return [];
++
++    // Step 2: fetch claims to determine type and associated work
++    const entityIds = entities.map((e: any) => e.id).join('|');
++    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityIds}&props=claims|descriptions&format=json&origin=*`;
++    const claimsRes = await fetch(claimsUrl, { signal });
++    if (!claimsRes.ok) return [];
++    const claimsData = await claimsRes.json();
++    const entityData = claimsData?.entities || {};
++
++    const results: SearchResult[] = [];
++
++    for (const entity of entities) {
++      const claims = entityData[entity.id]?.claims;
++      if (!claims) continue;
++
++      // Determine if it's a character (P31 = Q5 human, or P1080 = fictional character)
++      // and try to find the work it's from (P361 = part of, P1441 = present in work)
++      let imdbId: string | undefined;
++      let type: 'movie' | 'tv' = 'movie';
++      let year: string | undefined;
++      let associatedTitle = entity.description || '';
++
++      // Try to get IMDb ID of the work (P345 on the work entity)
++      const partOf = claims.P361 || claims.P1441 || [];
++      for (const stmt of partOf) {
++        const workQid = stmt?.mainsnak?.datavalue?.value?.id;
++        if (workQid) {
++          // Fetch the work's claims to get IMDb ID
++          try {
++            const workUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${workQid}&props=claims&format=json&origin=*`;
++            const workRes = await fetch(workUrl, { signal });
++            if (workRes.ok) {
++              const workData = await workRes.json();
++              const workClaims = workData?.entities?.[workQid]?.claims;
++              const imdbClaim = workClaims?.P345;
++              if (imdbClaim) {
++                imdbId = imdbClaim[0]?.mainsnak?.datavalue?.value;
++              }
++              // Determine type from work's instance of
++              const workInstanceOf = workClaims?.P31 || [];
++              for (const wStmt of workInstanceOf) {
++                const qid = wStmt?.mainsnak?.datavalue?.value?.id;
++                if (qid === 'Q5398426' || qid === 'Q15416' || qid === 'Q254440') { // TV series, television program, TV series episode
++                  type = 'tv';
++                  break;
++                }
++                if (qid === 'Q11424' || qid === 'Q24869') { // film, feature film
++                  type = 'movie';
++                  break;
++                }
++              }
++              // Get year from work
++              const workPubDate = workClaims?.P577 || workClaims?.P580;
++              if (workPubDate) {
++                const rawTime = workPubDate[0]?.mainsnak?.datavalue?.value?.time;
++                if (rawTime) {
++                  const match = (rawTime as string).match(/^\+?(\d{4})/);
++                  if (match) year = match[1];
++                }
++              }
++            }
++          } catch { /* ignore */ }
++        }
++      }
++
++      // If no associated work found, use entity's own IMDb ID if available (rare for characters)
++      if (!imdbId) {
++        const entityImdb = claims.P345;
++        if (entityImdb) {
++          imdbId = entityImdb[0]?.mainsnak?.datavalue?.value;
++        }
++      }
++
++      if (!imdbId || !(imdbId as string).startsWith('tt')) continue;
++
++      results.push({
++        imdbId: imdbId as string,
++        title: entity.label || 'Unknown Character',
++        year,
++        type,
++        posterUrl: undefined, // Could fetch from TMDB using imdbId if needed
++      });
++    }
++
++    return results;
++  } catch (e) {
++    if (isAbort(e)) throw e;
++    console.warn('Wikidata entity search failed:', e);
++    return [];
++  }
++}
++```
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `npm test -- src/services/search.test.ts`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add src/services/search.ts src/services/search.test.ts
++git commit -m "feat(search): add Wikidata entity search for characters"
++```
++
++---
++
++### Task 5: Update SearchResults component to render person type
++
++**Files:**
++- Modify: `src/components/SearchResults.tsx:12-117`
++- Test: `src/components/SearchResults.test.tsx` (new)
++
++**Interfaces:**
++- Consumes: Extended `SearchResult` with `person` type, `known_for_department`, `known_for`
++- Produces: Rendered person results with department badge and "known for" titles
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// src/components/SearchResults.test.tsx
++import { describe, it, expect } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import { SearchResults } from './SearchResults';
++
++describe('SearchResults person rendering', () => {
++  it('renders person with Acting badge and known_for titles', () => {
++    const personResult: SearchResult = {
++      imdbId: 'nm0000123',
++      title: 'Tom Hanks',
++      type: 'person',
++      known_for_department: 'Acting',
++      known_for: [
++        { imdbId: 'tt0120737', title: 'The Shawshank Redemption', type: 'movie' },
++        { imdbId: 'tt0109830', title: 'Forrest Gump', type: 'movie' }
++      ],
++      posterUrl: 'https://image.tmdb.org/t/p/w92/path.jpg'
++    };
++    
++    render(<SearchResults results={[personResult]} onSelect={vi.fn()} selectedIndex={-1} />);
++    expect(screen.getByText('Tom Hanks')).toBeInTheDocument();
++    expect(screen.getByText('Acting')).toBeInTheDocument();
++    expect(screen.getByText('The Shawshank Redemption')).toBeInTheDocument();
++  });
++});
++```
++
++- [ ] **Step 2: Run test to verify it fails**
++
++Run: `npm test -- src/components/SearchResults.test.tsx`
++Expected: FAIL (component doesn't handle person type)
++
++- [ ] **Step 3: Implement person rendering in `SearchResults`**
++
++In the map function (around line 43), add handling for `person` type:
++```typescript
++{results.map((result, index) => {
++  const isSelected = index === selectedIndex;
++  
++  if (result.type === 'person') {
++    return (
++      <div key={result.imdbId} role="option" aria-selected={isSelected} tabIndex={0} className={...}>
++        {/* Poster/avatar */}
++        <div className="w-14 h-20 rounded-lg overflow-hidden bg-slate-800 shrink-0 flex items-center justify-center border border-slate-700/50">
++          {result.posterUrl ? (
++            <img src={result.posterUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
++          ) : (
++            <User className="w-6 h-6 text-slate-600" />
++          )}
++        </div>
++        
++        <div className="flex-1 min-w-0">
++          <h3 className="text-base font-bold text-slate-100 truncate">{result.title}</h3>
++          <div className="flex items-center gap-2 mt-1">
++            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-400">
++              <User className="w-3.5 h-3.5" />
++              {result.known_for_department || 'Person'}
++            </span>
++          </div>
++          
++          {result.known_for && result.known_for.length > 0 && (
++            <div className="mt-2 flex flex-wrap gap-1.5">
++              {result.known_for.slice(0, 3).map((kf, ki) => (
++                <span key={kf.imdbId} className="text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded border border-slate-700/50">
++                  {kf.title} ({kf.type === 'movie' ? 'Movie' : 'TV'})
++                </span>
++              ))}
++            </div>
++          )}
++        </div>
++        
++        {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 shadow-lg shadow-cyan-400/50" />}
++      </div>
++    );
++  }
++  
++  // ... existing movie/tv rendering
++})}
++```
++(Add `import { User } from 'lucide-react';` at top)
++
++- [ ] **Step 4: Run test to verify it passes**
++
++Run: `npm test -- src/components/SearchResults.test.tsx`
++Expected: PASS
++
++- [ ] **Step 5: Commit**
++
++```bash
++git add src/components/SearchResults.tsx src/components/SearchResults.test.tsx
++git commit -m "feat(search): render person results in SearchResults"
++```
++
++---
++
++### Task 6: Update Navbar and HomePage to handle person selection
++
++**Files:**
++- Modify: `src/components/Navbar.tsx:28-107` (performSearch)
++- Modify: `src/pages/HomePage.tsx:60-96` (performSearch)
++- Test: Integration test or manual verification
++
++**Interfaces:**
++- Consumes: `searchByTitle` returns person results
++- Produces: Clicking a person result re-searches with that person's name
++
++- [ ] **Step 1: Write the failing test**
++
++```typescript
++// In Navbar.tsx performSearch, person selection should trigger new search
++// This is behavioral; test via integration or manual verification
++```
++
++- [ ] **Step 2: Implement person selection handling in `Navbar.tsx`**
++
++In `performSearch` (around line 95), after getting searchResults:
++```typescript
++} else {
++  const searchResults = await searchByTitle(query, signal);
++  if (signal.aborted) return;
++  setResults(searchResults);
++}
++```
++
++In `SearchResults` component's `handleClick` (SearchResults.tsx), when result.type === 'person':
++```typescript
++const handleClick = (result: SearchResult) => {
++  if (result.type === 'person') {
++    // Re-search with person's name to show their filmography
++    performSearch(result.title);
++    onSelect();
++    return;
++  }
++  // ... existing navigation logic
++};
++```
++
++Also update `HomePage.tsx` similarly ΓÇö its `performSearch` is nearly identical.
++
++- [ ] **Step 3: Run manual verification**
++
++Start dev server: `npm run dev`
++Test: Search "Tom Hanks" ΓåÆ see person result ΓåÆ click ΓåÆ shows their movies
++
++- [ ] **Step 4: Commit**
++
++```bash
++git add src/components/Navbar.tsx src/pages/HomePage.tsx src/components/SearchResults.tsx
++git commit -m "feat(search): handle person selection by re-searching"
++```
++
++---
++
++### Task 7: Add comprehensive tests and verify end-to-end
++
++**Files:**
++- Test: `src/services/search.test.ts` (extend)
++- Test: `src/components/SearchResults.test.tsx` (extend)
++
++**Interfaces:**
++- Consumes: All previous tasks
++- Produces: Full test coverage for new search behaviors
++
++- [ ] **Step 1: Add integration-style tests**
++
++```typescript
++// In search.test.ts
++describe('searchByTitle integration', () => {
++  it('returns movie results for title query', async () => { ... });
++  it('returns person results for actor name', async () => { ... });
++  it('returns genre results for genre name', async () => { ... });
++  it('returns character results for character name', async () => { ... });
++  it('prioritizes exact title match over genre', async () => { ... });
++});
++```
++
++- [ ] **Step 2: Run all tests**
++
++Run: `npm test`
++Expected: All PASS
++
++- [ ] **Step 3: Commit**
++
++```bash
++git add src/services/search.test.ts src/components/SearchResults.test.tsx
++git commit -m "test(search): add comprehensive extended search tests"
++```
++
++---
++
++## Summary
++
++This plan implements extended search in 7 tasks:
++1. **Type extension** ΓÇö SearchResult supports person
++2. **TMDB person search** ΓÇö Include actors/directors in multi-search
++3. **Genre detection** ΓÇö Route genre queries to TMDB discover
++4. **Wikidata entity search** ΓÇö Fallback for character names
++5. **UI rendering** ΓÇö SearchResults displays person with known-for
++6. **Selection handling** ΓÇö Click person ΓåÆ re-search filmography
++7. **Tests** ΓÇö Coverage for all new behaviors
++
++Each task produces independently testable code and follows the existing codebase patterns.
+\ No newline at end of file
+diff --git a/ld-extension/background.js b/ld-extension/background.js
+new file mode 100644
+index 0000000..62cb10e
+--- /dev/null
++++ b/ld-extension/background.js
+@@ -0,0 +1,90 @@
++// LD Habits Tracker ΓÇö background service worker (MV3)
++// Tracks focused+visible time per domain, per day. Writes to chrome.storage.local.
++// Dashboard reads via bridge.html (postMessage).
++const KEY = "ldWatchSeconds";
++const HEARTBEAT_MS = 10000;
++const MAX_DELTA_MS = 120000; // ignore gaps > 2 min (sleep/resume)
++
++let lastTs = Date.now();
++let lastDomain = null;
++
++function todayKey() {
++  const d = new Date();
++  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
++}
++function read() {
++  return new Promise(resolve => {
++    chrome.storage.local.get([KEY], res => resolve(res[KEY] || {}));
++  });
++}
++function write(map) {
++  return new Promise(resolve => {
++    chrome.storage.local.set({ [KEY]: map }, resolve);
++  });
++}
++function addSecs(domain, secs) {
++  if (secs <= 0) return;
++  read().then(map => {
++    const k = todayKey();
++    const day = map[k] || {};
++    day[domain] = (day[domain] || 0) + secs;
++    map[k] = day;
++    return write(map);
++  });
++}
++
++function extractDomain(url) {
++  try {
++    const u = new URL(url);
++    return u.hostname.replace(/^www\./, "");
++  } catch {
++    return null;
++  }
++}
++
++async function onActiveTabChanged(tab) {
++  if (!tab || !tab.url) return;
++  const domain = extractDomain(tab.url);
++  if (!domain) return;
++  lastDomain = domain;
++  lastTs = Date.now();
++}
++
++async function onVisibilityChange() {
++  // when any tab's visibility changes, re-evaluate the active one
++  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
++  await onActiveTabChanged(tabs[0]);
++}
++
++function heartbeat() {
++  const now = Date.now();
++  const delta = now - lastTs;
++  lastTs = now;
++  if (delta > 0 && delta <= MAX_DELTA_MS && lastDomain) {
++    addSecs(lastDomain, Math.round(delta / 1000));
++  }
++}
++
++chrome.tabs.onActivated.addListener(async info => {
++  const tab = await chrome.tabs.get(info.tabId);
++  await onActiveTabChanged(tab);
++});
++chrome.windows.onFocusChanged.addListener(async windowId => {
++  if (windowId === chrome.windows.WINDOW_ID_NONE) {
++    lastDomain = null;
++    return;
++  }
++  const tabs = await chrome.tabs.query({ active: true, windowId });
++  await onActiveTabChanged(tabs[0]);
++});
++chrome.tabs.onUpdated.addListener((id, change, tab) => {
++  if (change.status === "complete" && tab.active) onActiveTabChanged(tab);
++});
++chrome.tabs.onRemoved.addListener(() => {
++  lastDomain = null;
++});
++
++setInterval(heartbeat, HEARTBEAT_MS);
++
++// Initialize on load
++chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(tabs => onActiveTabChanged(tabs[0]));
+\ No newline at end of file
+diff --git a/ld-extension/bridge.html b/ld-extension/bridge.html
+new file mode 100644
+index 0000000..02d9428
+--- /dev/null
++++ b/ld-extension/bridge.html
+@@ -0,0 +1,53 @@
++<!doctype html>
++<html>
++<head><meta charset="utf-8"><title>LD Habits Bridge</title></head>
++<body>
++<script>
++// Bridge between the LD Habits Tracker extension and the local Life Dashboard.
++// Reads chrome.storage.local and replies to postMessage from the dashboard.
++// The dashboard opens this page in a hidden iframe.
++(function () {
++  const KEY = "ldWatchSeconds";
++
++  function todayKey() {
++    const d = new Date();
++    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
++  }
++  function pad(n) { return (n < 10 ? "0" : "") + n; }
++  function keyForOffset(offset) {
++    const d = new Date();
++    d.setDate(d.getDate() + offset);
++    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
++  }
++  function lastNDays(map, n) {
++    const out = [];
++    for (let i = n - 1; i >= 0; i--) {
++      const k = keyForOffset(-i);
++      out.push({ date: k, domains: map[k] || {} });
++    }
++    return out;
++  }
++
++  window.addEventListener("message", async ev => {
++    const msg = ev.data;
++    if (!msg || msg.source !== "ld-dashboard" || msg.type !== "get-watch-stats") return;
++
++    const map = await new Promise(r => chrome.storage.local.get([KEY], res => r(res[KEY] || {})));
++    const days = lastNDays(map, 7);
++    const today = map[todayKey()] || {};
++
++    let weekTotal = 0;
++    for (const d of days) for (const s of Object.values(d.domains)) weekTotal += s;
++
++    const reply = {
++      source: "ld-habits-bridge",
++      today: today,
++      week: weekTotal,
++      days: days
++    };
++    ev.source.postMessage(reply, "*");
++  });
++})();
++</script>
++</body>
++</html>
+\ No newline at end of file
+diff --git a/ld-extension/manifest.json b/ld-extension/manifest.json
+new file mode 100644
+index 0000000..b6e70ea
+--- /dev/null
++++ b/ld-extension/manifest.json
+@@ -0,0 +1,16 @@
++{
++  "manifest_version": 3,
++  "name": "LD Habits Tracker",
++  "version": "0.1.0",
++  "description": "Times active tab per domain for the local Life Dashboard. Private, no network.",
++  "permissions": ["storage", "activeTab"],
++  "host_permissions": ["<all_urls>"],
++  "background": {
++    "service_worker": "background.js",
++    "type": "module"
++  },
++  "web_accessible_resources": [{
++    "resources": ["bridge.html"],
++    "matches": ["<all_urls>"]
++  }]
++}
+\ No newline at end of file
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+index 88929ee..1617e89 100644
+--- a/src/components/Navbar.tsx
++++ b/src/components/Navbar.tsx
+@@ -139,32 +139,48 @@ export const Navbar: FC = () => {
+         setSelectedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+         break;
+       case 'ArrowUp':
+         e.preventDefault();
+         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+         break;
+       case 'Enter':
+         e.preventDefault();
+         if (selectedIndex >= 0 && selectedIndex < results.length) {
+           const result = results[selectedIndex];
+-          navigate(
+-            result.type === 'movie'
+-              ? `/movie/${result.imdbId}`
+-              : `/tv/${result.imdbId}`
+-          );
++          if (result.type === 'person') {
++            setSearchText(result.title);
++            performSearch(result.title);
++          } else {
++            navigate(
++              result.type === 'movie'
++                ? `/movie/${result.imdbId}`
++                : `/tv/${result.imdbId}`
++            );
++            setSearchText('');
++            setResults([]);
++            setHasSearched(false);
++          }
+         } else if (results.length === 1) {
+           const result = results[0];
+-          navigate(
+-            result.type === 'movie'
+-              ? `/movie/${result.imdbId}`
+-              : `/tv/${result.imdbId}`
+-          );
++          if (result.type === 'person') {
++            setSearchText(result.title);
++            performSearch(result.title);
++          } else {
++            navigate(
++              result.type === 'movie'
++                ? `/movie/${result.imdbId}`
++                : `/tv/${result.imdbId}`
++            );
++            setSearchText('');
++            setResults([]);
++            setHasSearched(false);
++          }
+         }
+         break;
+       case 'Escape':
+         handleClearSearch();
+         break;
+     }
+   };
+ 
+   useEffect(() => {
+     const handleFocusSearch = () => searchInputRef.current?.focus();
+@@ -237,21 +253,27 @@ export const Navbar: FC = () => {
+               >
+                 <X className="w-4 h-4" />
+               </button>
+             )}
+             
+             {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
+               <div className="absolute left-0 right-0 mt-2" id="navbar-search-results">
+                 {results.length > 0 ? (
+                   <SearchResults
+                     results={results}
+-                    onSelect={() => {
++                    onSelect={(result) => {
++                      if (result?.type === 'person') {
++                        // Re-search with person's name to show their filmography
++                        setSearchText(result.title);
++                        performSearch(result.title);
++                        return;
++                      }
+                       setSearchText('');
+                       setResults([]);
+                       setHasSearched(false);
+                     }}
+                     selectedIndex={selectedIndex}
+                   />
+                 ) : (
+                   <div className="px-4 py-2 text-center text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800/50">
+                     <p className="text-xs">No results for <span className="text-slate-300">"{searchText}"</span></p>
+                   </div>
+diff --git a/src/components/SearchResults.test.tsx b/src/components/SearchResults.test.tsx
+new file mode 100644
+index 0000000..6ea1d64
+--- /dev/null
++++ b/src/components/SearchResults.test.tsx
+@@ -0,0 +1,29 @@
++import { describe, it, expect, vi } from 'vitest';
++import { renderToStaticMarkup } from 'react-dom/server';
++import { createElement } from 'react';
++import { SearchResults } from './SearchResults';
++
++vi.mock('react-router-dom', () => ({
++  useNavigate: () => vi.fn(),
++}));
++
++describe('SearchResults person rendering', () => {
++  it('renders person with department badge and known_for titles', () => {
++    const personResult: import('../services/catalog').SearchResult = {
++      imdbId: 'nm0000123',
++      title: 'Tom Hanks',
++      type: 'person',
++      known_for_department: 'Acting',
++      known_for: [
++        { imdbId: 'tt0120737', title: 'The Shawshank Redemption', type: 'movie' },
++        { imdbId: 'tt0109830', title: 'Forrest Gump', type: 'movie' }
++      ],
++      posterUrl: 'https://image.tmdb.org/t/p/w92/path.jpg'
++    };
++
++    const html = renderToStaticMarkup(createElement(SearchResults, { results: [personResult], onSelect: vi.fn(), selectedIndex: -1 }));
++    expect(html).toContain('Tom Hanks');
++    expect(html).toContain('Acting');
++    expect(html).toContain('The Shawshank Redemption');
++  });
++});
+diff --git a/src/components/SearchResults.tsx b/src/components/SearchResults.tsx
+index 50ffcc2..904bd79 100644
+--- a/src/components/SearchResults.tsx
++++ b/src/components/SearchResults.tsx
+@@ -1,25 +1,30 @@
+ import type { FC, KeyboardEvent } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import type { SearchResult } from '../services/catalog';
+-import { Film, Tv, Hash, Star } from 'lucide-react';
++import { Film, Tv, Hash, Star, User } from 'lucide-react';
+ 
+ interface SearchResultsProps {
+   results: SearchResult[];
+-  onSelect: () => void;
++  onSelect: (result?: SearchResult) => void;
+   selectedIndex: number;
+ }
+ 
+ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selectedIndex }) => {
+   const navigate = useNavigate();
+ 
+   const handleClick = (result: SearchResult) => {
++    if (result.type === 'person') {
++      // Re-search with person's name to show their filmography
++      onSelect(result);
++      return;
++    }
+     const targetUrl =
+       result.type === 'movie'
+         ? `/movie/${result.imdbId}`
+         : `/tv/${result.imdbId}`;
+     navigate(targetUrl);
+     onSelect();
+   };
+ 
+   const handleKeyDown = (e: KeyboardEvent, result: SearchResult) => {
+     if (e.key === 'Enter' || e.key === ' ') {
+@@ -35,20 +40,77 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
+       className="w-full max-w-3xl mx-auto bg-slate-900/90 border-2 border-slate-700/60 rounded-2xl overflow-hidden shadow-2xl shadow-black/30 backdrop-blur"
+       role="listbox"
+       aria-label="Search results"
+       aria-live="polite"
+     >
+       <span className="sr-only">
+         {results.length} result{results.length === 1 ? '' : 's'} found
+       </span>
+       {results.map((result, index) => {
+         const isSelected = index === selectedIndex;
++
++        if (result.type === 'person') {
++          return (
++            <div
++              key={result.imdbId}
++              role="option"
++              aria-selected={isSelected}
++              tabIndex={0}
++              onClick={() => handleClick(result)}
++              onKeyDown={(e) => handleKeyDown(e, result)}
++              className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors border-b border-slate-800/50 last:border-b-0 ${
++                isSelected
++                  ? 'bg-cyan-500/15 border-l-4 border-l-cyan-400 ring-1 ring-cyan-500/30'
++                  : 'hover:bg-slate-800/60 focus-visible:bg-slate-800/80 focus-visible:ring-2 focus-visible:ring-cyan-500/40 border-l-4 border-l-transparent'
++              }`}
++            >
++              {/* Poster/avatar */}
++              <div className="w-14 h-20 rounded-lg overflow-hidden bg-slate-800 shrink-0 flex items-center justify-center border border-slate-700/50">
++                {result.posterUrl ? (
++                  <img
++                    src={result.posterUrl}
++                    alt=""
++                    className="w-full h-full object-cover"
++                    loading="lazy"
++                  />
++                ) : (
++                  <User className="w-6 h-6 text-slate-600" />
++                )}
++              </div>
++
++              <div className="flex-1 min-w-0">
++                <h3 className="text-base font-bold text-slate-100 truncate">{result.title}</h3>
++                <div className="flex items-center gap-2 mt-1">
++                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-400">
++                    <User className="w-3.5 h-3.5" />
++                    {result.known_for_department || 'Person'}
++                  </span>
++                </div>
++
++                {result.known_for && result.known_for.length > 0 && (
++                  <div className="mt-2 flex flex-wrap gap-1.5">
++                    {result.known_for.slice(0, 3).map((kf) => (
++                      <span key={kf.imdbId} className="text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded border border-slate-700/50">
++                        {kf.title} ({kf.type === 'movie' ? 'Movie' : 'TV'})
++                      </span>
++                    ))}
++                  </div>
++                )}
++              </div>
++
++              {isSelected && (
++                <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 shadow-lg shadow-cyan-400/50" />
++              )}
++            </div>
++          );
++        }
++
+         return (
+           <div
+             key={result.imdbId}
+             role="option"
+             aria-selected={isSelected}
+             tabIndex={0}
+             onClick={() => handleClick(result)}
+             onKeyDown={(e) => handleKeyDown(e, result)}
+             className={`flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors border-b border-slate-800/50 last:border-b-0 ${
+               isSelected
+@@ -94,21 +156,21 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
+                 }`}>
+                   {result.type === 'movie' ? (
+                     <Film className="w-3.5 h-3.5" />
+                   ) : (
+                     <Tv className="w-3.5 h-3.5" />
+                   )}
+                   {result.type === 'movie' ? 'Movie' : 'TV Series'}
+                 </span>
+               </div>
+               <p className="text-xs text-slate-500 font-mono mt-1">
+-                IMDb: {result.imdbId}
++                IMDB: {result.imdbId}
+               </p>
+             </div>
+ 
+             {/* Selected indicator */}
+             {isSelected && (
+               <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 shadow-lg shadow-cyan-400/50" />
+             )}
+           </div>
+         );
+       })}
+diff --git a/src/pages/HomePage.tsx b/src/pages/HomePage.tsx
+index 3e9878a..a4fc10b 100644
+--- a/src/pages/HomePage.tsx
++++ b/src/pages/HomePage.tsx
+@@ -129,33 +129,49 @@ export const HomePage: FC = () => {
+         setSelectedIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+         break;
+       case 'ArrowUp':
+         e.preventDefault();
+         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+         break;
+       case 'Enter':
+         e.preventDefault();
+         if (selectedIndex >= 0 && selectedIndex < results.length) {
+           const result = results[selectedIndex];
+-          navigate(
+-            result.type === 'movie'
+-              ? `/movie/${result.imdbId}`
+-              : `/tv/${result.imdbId}`
+-          );
++          if (result.type === 'person') {
++            setSearchText(result.title);
++            performSearch(result.title);
++          } else {
++            navigate(
++              result.type === 'movie'
++                ? `/movie/${result.imdbId}`
++                : `/tv/${result.imdbId}`
++            );
++            setSearchText('');
++            setResults([]);
++            setHasSearched(false);
++          }
+         } else if (results.length === 1) {
+           // Auto-navigate if only one result
+           const result = results[0];
+-          navigate(
+-            result.type === 'movie'
+-              ? `/movie/${result.imdbId}`
+-              : `/tv/${result.imdbId}`
+-          );
++          if (result.type === 'person') {
++            setSearchText(result.title);
++            performSearch(result.title);
++          } else {
++            navigate(
++              result.type === 'movie'
++                ? `/movie/${result.imdbId}`
++                : `/tv/${result.imdbId}`
++            );
++            setSearchText('');
++            setResults([]);
++            setHasSearched(false);
++          }
+         }
+         break;
+       case 'Escape':
+         handleClearSearch();
+         break;
+     }
+   };
+ 
+   // Handle pre-filled query from old-style ?q= URL param
+   useEffect(() => {
+@@ -168,21 +184,27 @@ export const HomePage: FC = () => {
+ 
+   useEffect(() => {
+     const debounce = debounceRef;
+     const abort = abortRef;
+     return () => {
+       if (debounce.current) clearTimeout(debounce.current);
+       if (abort.current) abort.current.abort();
+     };
+   }, []);
+ 
+-  const handleResultSelect = () => {
++  const handleResultSelect = (result?: SearchResult) => {
++    if (result?.type === 'person') {
++      // Re-search with person's name to show their filmography
++      setSearchText(result.title);
++      performSearch(result.title);
++      return;
++    }
+     setSearchText('');
+     setResults([]);
+     setHasSearched(false);
+   };
+ 
+   return (
+     <div ref={mainRef} className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+       {/* Search */}
+       <div className="max-w-3xl mx-auto mb-12">
+         <div className="relative">
+diff --git a/src/services/search.test.ts b/src/services/search.test.ts
+new file mode 100644
+index 0000000..1d29c07
+--- /dev/null
++++ b/src/services/search.test.ts
+@@ -0,0 +1,159 @@
++import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
++import type { SearchResult } from './search';
++import { searchByTitle } from './search';
++
++vi.mock('../config', () => ({
++  TMDB_API_KEY: '',
++  OMDB_API_KEY: '',
++  FALLBACK_TMDB_API_KEY: 'test-key',
++  canUseTmdb: () => true,
++  tmdbDirectUrl: (path: string) => `https://api.themoviedb.org/3${path}?api_key=test-key`,
++  tmdbFetchJson: async () => null,
++}));
++
++vi.mock('./rows', () => ({
++  getMovieGenres: async () => [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }]
++}));
++
++describe('searchByTitle extended types', () => {
++  it('SearchResult type includes person with known_for_department', () => {
++    const personResult: SearchResult = {
++      imdbId: 'nm0000123',
++      title: 'Tom Hanks',
++      type: 'person',
++      known_for_department: 'Acting',
++      known_for: [{ imdbId: 'tt0120737', title: 'The Shawshank Redemption', type: 'movie' }]
++    };
++    expect(personResult.type).toBe('person');
++    expect(personResult.known_for_department).toBe('Acting');
++  });
++
++  it('searchByTitle returns person results for actor names', async () => {
++    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
++      const urlStr = input.toString();
++      if (urlStr.includes('/search/multi')) {
++        return {
++          ok: true,
++          json: async () => ({
++            results: [
++              { media_type: 'person', id: 66633, name: 'Tom Hanks', known_for_department: 'Acting', known_for: [], profile_path: '/path.jpg' },
++              { media_type: 'movie', id: 456, title: 'Test Movie', poster_path: '/movie.jpg' },
++            ]
++          })
++        };
++      }
++      if (urlStr.includes('/external_ids')) {
++        return {
++          ok: true,
++          json: async () => ({ imdb_id: 'tt0123456' })
++        };
++      }
++      if (urlStr.includes('/genre/movie/list')) {
++        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
++      }
++      return { ok: false, json: async () => ({}) };
++    });
++
++    const results = await searchByTitle('Tom Hanks');
++    const person = results.find(r => r.type === 'person');
++    expect(person).toBeDefined();
++    expect(person?.title).toBe('Tom Hanks');
++    expect(person?.known_for_department).toBe('Acting');
++  });
++});
++
++describe('searchByTitle genre detection', () => {
++  beforeEach(() => {
++    vi.resetAllMocks();
++    vi.spyOn(globalThis, "fetch");
++  });
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it('detects genre query and uses discover endpoint', async () => {
++    // Mock fetch for discover endpoint
++    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
++      const urlStr = input.toString();
++      if (urlStr.includes('/discover/movie')) {
++        return {
++          ok: true,
++          json: async () => ({ results: [{ id: 123, title: 'Action Movie', media_type: 'movie', poster_path: '/action.jpg', vote_average: 8.0, vote_count: 1000, release_date: '2020-01-01' }] })
++        };
++      }
++      if (urlStr.includes('/search/multi')) {
++        return { ok: true, json: async () => ({ results: [] }) };
++      }
++      if (urlStr.includes('/genre/movie/list')) {
++        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
++      }
++      return { ok: false, json: async () => ({}) };
++    });
++
++    const results = await searchByTitle('action');
++    expect(results.length).toBeGreaterThan(0);
++    expect(results[0].type).toBe('movie');
++  });
++});
++
++describe('searchByTitle Wikidata entity search', () => {
++  beforeEach(() => {
++    vi.resetAllMocks();
++    vi.spyOn(globalThis, "fetch");
++  });
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++  });
++
++  it('falls back to Wikidata entity search for characters', async () => {
++    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
++      const urlStr = input.toString();
++      if (urlStr.includes('/search/multi')) {
++        return { ok: true, json: async () => ({ results: [] }) };
++      }
++      if (urlStr.includes('wbsearchentities')) {
++        return {
++          ok: true,
++          json: async () => ({
++            search: [{ id: 'Q123', label: 'Jon Snow', description: 'Game of Thrones character' }]
++          })
++        };
++      }
++      if (urlStr.includes('wbgetentities')) {
++        return {
++          ok: true,
++          json: async () => ({
++            entities: {
++              Q123: {
++                claims: {
++                  P31: [{ mainsnak: { datavalue: { value: { id: 'Q5' } } } }],
++                  P361: [{ mainsnak: { datavalue: { value: { id: 'Q12345' } } } }]
++                }
++              },
++              Q12345: {
++                claims: {
++                  P345: [{ mainsnak: { datavalue: { value: 'tt0944947' } } }],
++                  P31: [{ mainsnak: { datavalue: { value: { id: 'Q5398426' } } } }],
++                  P577: [{ mainsnak: { datavalue: { value: { time: '+2011-04-17T00:00:00Z' } } } }]
++                }
++              }
++            }
++          })
++        };
++      }
++      if (urlStr.includes('omdbapi.com')) {
++        return { ok: true, json: async () => ({ Response: 'False' }) };
++      }
++      if (urlStr.includes('/genre/movie/list')) {
++        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
++      }
++      return { ok: false, json: async () => ({}) };
++    });
++
++    const results = await searchByTitle('Jon Snow');
++    const character = results.find(r => r.title === 'Jon Snow');
++    expect(character).toBeDefined();
++  });
++});
+diff --git a/src/services/search.ts b/src/services/search.ts
+index 314785d..3e0cd1c 100644
+--- a/src/services/search.ts
++++ b/src/services/search.ts
+@@ -1,19 +1,22 @@
+ import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbDirectUrl } from './config';
++import { getMovieGenres } from './rows';
+ 
+ export interface SearchResult {
+   imdbId: string;
+   title: string;
+   year?: string;
+-  type: 'movie' | 'tv';
++  type: 'movie' | 'tv' | 'person';
+   posterUrl?: string;
+   rating?: string;
++  known_for_department?: string;
++  known_for?: SearchResult[];
+ }
+ 
+ /**
+  * `AbortError` is thrown by an aborted fetch. Callers distinguish it from real
+  * failures so a cancelled request is never rendered as "no results".
+  */
+ function isAbort(e: unknown): boolean {
+   return e instanceof DOMException && e.name === 'AbortError';
+ }
+ 
+@@ -26,54 +29,122 @@ export { isAbort };
+  * user key via the fallback key). Fallback: Wikidata (free, CC0, CORS-friendly),
+  * then OMDb (requires a key). Each step is isolated so a failure never breaks
+  * the next one.
+  *
+  * `signal` aborts the in-flight request so a newer keystroke supersedes it.
+  */
+ export async function searchByTitle(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
+   const cleanQuery = query.trim();
+   if (!cleanQuery || cleanQuery.length < 2) return [];
+ 
++  // 0. Genre detection ΓÇö if query matches a known genre, use discover
++  try {
++    const genres = await getMovieGenres();
++    const matchedGenre = genres.find(g => g.name.toLowerCase() === cleanQuery.toLowerCase());
++    if (matchedGenre) {
++      const discoverResults = await searchDiscoverByGenre(matchedGenre.id, signal);
++      if (discoverResults.length > 0) return discoverResults;
++      // Fall through to normal search if discover returns nothing
++    }
++  } catch (e) {
++    if (isAbort(e)) throw e;
++    /* ignore genre detection errors */
++  }
++
+   // 1. TMDB ΓÇö richest results incl. posters
+   const tmdbResults = await searchTmdb(cleanQuery, signal);
+   if (tmdbResults.length > 0) return tmdbResults;
+ 
+   // 2. Wikidata ΓÇö free, CORS-friendly, no key
+   const wikidataResults = await searchWikidata(cleanQuery, signal);
+   if (wikidataResults.length > 0) return wikidataResults;
+ 
+   // 3. OMDb ΓÇö requires free API key
+   const omdbResults = await searchOmdb(cleanQuery, signal);
+   if (omdbResults.length > 0) return omdbResults.slice(0, 15);
+ 
++  // 4. Wikidata entity search (characters, etc.) ΓÇö last resort
++  const entityResults = await searchWikidataEntities(cleanQuery, signal);
++  if (entityResults.length > 0) return entityResults;
++
+   return [];
+ }
+ 
++async function searchDiscoverByGenre(genreId: number, signal?: AbortSignal): Promise<SearchResult[]> {
++  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
++  if (!tmdbKey || !canUseTmdb(tmdbKey)) return [];
++
++  try {
++    const params = new URLSearchParams({
++      sort_by: 'popularity.desc',
++      with_genres: String(genreId),
++      'vote_average.gte': '6.0',
++      'vote_count.gte': '500',
++      page: '1',
++    });
++    if (tmdbKey) params.set('api_key', tmdbKey);
++
++    const res = await fetch(tmdbDirectUrl(`/discover/movie?${params.toString()}`, tmdbKey), { signal });
++    if (!res.ok) return [];
++    const data = await res.json();
++    const items = (data.results || []).slice(0, 15);
++
++    return items.map((item: any) => ({
++      imdbId: item.id?.toString().startsWith('tt') ? item.id : `tmdb:${item.id}`,
++      title: item.title || 'Untitled',
++      year: (item.release_date || '').substring(0, 4) || undefined,
++      type: 'movie' as const,
++      posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
++      rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
++    }));
++  } catch (e) {
++    if (isAbort(e)) throw e;
++    console.warn('Genre discover search failed:', e);
++    return [];
++  }
++}
++
+ async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
+   const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+   // Without a key the direct URL builder returns "" and `fetch('')` would hit
+   // the page itself, so bail out instead of sending a useless request.
+   if (!tmdbKey || !canUseTmdb(tmdbKey)) return [];
+ 
+   try {
+     const searchRes = await fetch(tmdbDirectUrl(`/search/multi?query=${encodeURIComponent(cleanQuery)}&page=1`, tmdbKey), { signal });
+     if (!searchRes.ok) return [];
+ 
+     const data = await searchRes.json();
+     const items = (data.results || []).filter(
+-      (item: any) => item.media_type === 'movie' || item.media_type === 'tv'
++      (item: any) => item.media_type === 'movie' || item.media_type === 'tv' || item.media_type === 'person'
+     );
+     if (items.length === 0) return [];
+ 
+     // Cap the per-item IMDb lookups so a search stays snappy on TV hardware.
+     const results: SearchResult[] = [];
+     for (const item of items.slice(0, 8)) {
++      if (item.media_type === 'person') {
++        results.push({
++          imdbId: `tmdb_person:${item.id}`,
++          title: item.name || 'Unknown',
++          type: 'person',
++          known_for_department: item.known_for_department,
++          known_for: item.known_for?.slice(0, 3).map((kf: any) => ({
++            imdbId: kf.id ? `tmdb:${kf.id}` : 'unknown',
++            title: kf.title || kf.name || 'Unknown',
++            type: (kf.media_type === 'movie' ? 'movie' : 'tv') as 'movie' | 'tv',
++            posterUrl: kf.poster_path ? `https://image.tmdb.org/t/p/w92${kf.poster_path}` : undefined,
++          })) || [],
++          posterUrl: item.profile_path ? `https://image.tmdb.org/t/p/w92${item.profile_path}` : undefined,
++        });
++        continue;
++      }
+       let imdbId: string | undefined;
+       try {
+         const extRes = await fetch(tmdbDirectUrl(`/${item.media_type}/${item.id}/external_ids`, tmdbKey), { signal });
+         if (extRes.ok) imdbId = (await extRes.json()).imdb_id || undefined;
+       } catch (e) {
+         if (isAbort(e)) throw e;
+         /* skip */
+       }
+       if (!imdbId) continue;
+       results.push({
+@@ -158,20 +229,118 @@ async function searchWikidata(cleanQuery: string, signal?: AbortSignal): Promise
+     }
+ 
+     return results;
+   } catch (e) {
+     if (isAbort(e)) throw e;
+     console.warn('Wikidata search failed:', e);
+     return [];
+   }
+ }
+ 
++async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
++  try {
++    // Step 1: search for matching Wikidata entities
++    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(cleanQuery)}&language=en&limit=10&format=json&origin=*`;
++    const searchRes = await fetch(searchUrl, { signal });
++    if (!searchRes.ok) return [];
++    const searchData = await searchRes.json();
++    const entities = searchData?.search || [];
++    if (entities.length === 0) return [];
++
++    // Step 2: fetch claims to determine type and associated work
++    const entityIds = entities.map((e: any) => e.id).join('|');
++    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityIds}&props=claims&format=json&origin=*`;
++    const claimsRes = await fetch(claimsUrl, { signal });
++    if (!claimsRes.ok) return [];
++    const claimsData = await claimsRes.json();
++    const entityData = claimsData?.entities || {};
++
++    const results: SearchResult[] = [];
++
++    for (const entity of entities) {
++      const claims = entityData[entity.id]?.claims;
++      if (!claims) continue;
++
++      let imdbId: string | undefined;
++      let type: 'movie' | 'tv' = 'movie';
++      let year: string | undefined;
++
++      // Try to get associated work (P361 = part of, P1441 = present in work)
++      const partOf = claims.P361 || claims.P1441 || [];
++      for (const stmt of partOf) {
++        const workQid = stmt?.mainsnak?.datavalue?.value?.id;
++        if (workQid) {
++          // Fetch the work's claims to get IMDb ID
++          try {
++            const workUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${workQid}&props=claims&format=json&origin=*`;
++            const workRes = await fetch(workUrl, { signal });
++            if (workRes.ok) {
++              const workData = await workRes.json();
++              const workClaims = workData?.entities?.[workQid]?.claims;
++              const imdbClaim = workClaims?.P345;
++              if (imdbClaim) {
++                imdbId = imdbClaim[0]?.mainsnak?.datavalue?.value;
++              }
++              // Determine type from work's instance of
++              const workInstanceOf = workClaims?.P31 || [];
++              for (const wStmt of workInstanceOf) {
++                const qid = wStmt?.mainsnak?.datavalue?.value?.id;
++                if (qid === 'Q5398426' || qid === 'Q15416' || qid === 'Q254440') {
++                  type = 'tv';
++                  break;
++                }
++                if (qid === 'Q11424' || qid === 'Q24869') {
++                  type = 'movie';
++                  break;
++                }
++              }
++              // Get year from work
++              const workPubDate = workClaims?.P577 || workClaims?.P580;
++              if (workPubDate) {
++                const rawTime = workPubDate[0]?.mainsnak?.datavalue?.value?.time;
++                if (rawTime) {
++                  const match = (rawTime as string).match(/^\+?(\d{4})/);
++                  if (match) year = match[1];
++                }
++              }
++            }
++          } catch { /* ignore */ }
++        }
++      }
++
++      // If no associated work found, use entity's own IMDb ID if available
++      if (!imdbId) {
++        const entityImdb = claims.P345;
++        if (entityImdb) {
++          imdbId = entityImdb[0]?.mainsnak?.datavalue?.value;
++        }
++      }
++
++      if (!imdbId || !(imdbId as string).startsWith('tt')) continue;
++
++      results.push({
++        imdbId: imdbId as string,
++        title: entity.label || 'Unknown Character',
++        year,
++        type,
++        posterUrl: undefined,
++      });
++    }
++
++    return results;
++  } catch (e) {
++    if (isAbort(e)) throw e;
++    console.warn('Wikidata entity search failed:', e);
++    return [];
++  }
++}
++
+ async function searchOmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
+   if (!OMDB_API_KEY) return [];
+ 
+   try {
+     const res = await fetch(
+       `https://www.omdbapi.com/?apikey=${OMDB_API_KEY}&s=${encodeURIComponent(cleanQuery)}`,
+       { signal },
+     );
+     if (!res.ok) return [];
+ 
+diff --git a/vitest.config.ts b/vitest.config.ts
+index 50601a9..a21737e 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -1,9 +1,9 @@
+ import { defineConfig } from 'vitest/config';
+ 
+ export default defineConfig({
+   test: {
+     environment: 'jsdom',
+     setupFiles: ['./src/test/setup.ts'],
+-    include: ['src/**/*.test.ts'],
++    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+   },
+ });

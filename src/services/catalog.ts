@@ -16,7 +16,7 @@ export {
   fetchSimilarTVShows,
 } from './embed2';
 
-export { searchByTitle } from './search';
+export { searchByTitle, searchPersonCredits } from './search';
 export type { SearchResult } from './search';
 
 export {

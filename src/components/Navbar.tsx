@@ -5,7 +5,7 @@ import { Film, Search, X, Loader2, Clock } from 'lucide-react';
 import { SettingsMenu } from '../components/SettingsMenu';
 import { WatchStats } from '../components/WatchStats';
 import { SearchResults } from './SearchResults';
-import { searchByTitle } from '../services/catalog';
+import { searchByTitle, searchPersonCredits } from '../services/catalog';
 import { resolveDirectImdbId, resolveImdbTitle, resolveTmdbFromImdb, detectMediaType } from '../services/metadata';
 import type { SearchResult } from '../services/catalog';
 import { SEARCH_DEBOUNCE_MS, MIN_SEARCH_QUERY_LENGTH } from '../constants';
@@ -130,7 +130,7 @@ export const Navbar: FC = () => {
     searchInputRef.current?.focus();
   };
 
-  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
     if (results.length === 0) return;
 
     switch (e.key) {
@@ -144,36 +144,29 @@ export const Navbar: FC = () => {
         break;
       case 'Enter':
         e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < results.length) {
-          const result = results[selectedIndex];
-          if (result.type === 'person') {
-            setSearchText(result.title);
-            performSearch(result.title);
-          } else {
-            navigate(
-              result.type === 'movie'
-                ? `/movie/${result.imdbId}`
-                : `/tv/${result.imdbId}`
-            );
-            setSearchText('');
-            setResults([]);
-            setHasSearched(false);
-          }
-        } else if (results.length === 1) {
-          const result = results[0];
-          if (result.type === 'person') {
-            setSearchText(result.title);
-            performSearch(result.title);
-          } else {
-            navigate(
-              result.type === 'movie'
-                ? `/movie/${result.imdbId}`
-                : `/tv/${result.imdbId}`
-            );
-            setSearchText('');
-            setResults([]);
-            setHasSearched(false);
-          }
+        const target = selectedIndex >= 0 && selectedIndex < results.length
+          ? results[selectedIndex]
+          : results.length === 1 ? results[0] : null;
+        if (!target) break;
+        if (target.type === 'person' && target.tmdbId) {
+          setIsSearching(true);
+          const credits = await searchPersonCredits(target.tmdbId);
+          setResults(credits);
+          setSearchText(target.title);
+          setIsSearching(false);
+        } else if (target.type === 'person') {
+          // No TMDB id, fall back to re-search by name
+          setSearchText(target.title);
+          performSearch(target.title);
+        } else {
+          navigate(
+            target.type === 'movie'
+              ? `/movie/${target.imdbId}`
+              : `/tv/${target.imdbId}`
+          );
+          setSearchText('');
+          setResults([]);
+          setHasSearched(false);
         }
         break;
       case 'Escape':
@@ -262,9 +255,17 @@ export const Navbar: FC = () => {
                     results={results}
                     onSelect={(result) => {
                       if (result?.type === 'person') {
-                        // Re-search with person's name to show their filmography
-                        setSearchText(result.title);
-                        performSearch(result.title);
+                        if (result.tmdbId) {
+                          setSearchText(result.title);
+                          setIsSearching(true);
+                          searchPersonCredits(result.tmdbId).then((credits) => {
+                            setResults(credits);
+                            setIsSearching(false);
+                          });
+                        } else {
+                          setSearchText(result.title);
+                          performSearch(result.title);
+                        }
                         return;
                       }
                       setSearchText('');

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import type { FC, ChangeEvent, KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { SearchResult } from '../services/catalog';
-import { searchByTitle } from '../services/catalog';
+import { searchByTitle, searchPersonCredits } from '../services/catalog';
 import { SearchResults } from '../components/SearchResults';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { MyList } from '../components/MyList';
@@ -120,7 +120,7 @@ export const HomePage: FC = () => {
     searchInputRef.current?.focus();
   };
 
-  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
     if (results.length === 0) return;
 
     switch (e.key) {
@@ -134,37 +134,28 @@ export const HomePage: FC = () => {
         break;
       case 'Enter':
         e.preventDefault();
-        if (selectedIndex >= 0 && selectedIndex < results.length) {
-          const result = results[selectedIndex];
-          if (result.type === 'person') {
-            setSearchText(result.title);
-            performSearch(result.title);
-          } else {
-            navigate(
-              result.type === 'movie'
-                ? `/movie/${result.imdbId}`
-                : `/tv/${result.imdbId}`
-            );
-            setSearchText('');
-            setResults([]);
-            setHasSearched(false);
-          }
-        } else if (results.length === 1) {
-          // Auto-navigate if only one result
-          const result = results[0];
-          if (result.type === 'person') {
-            setSearchText(result.title);
-            performSearch(result.title);
-          } else {
-            navigate(
-              result.type === 'movie'
-                ? `/movie/${result.imdbId}`
-                : `/tv/${result.imdbId}`
-            );
-            setSearchText('');
-            setResults([]);
-            setHasSearched(false);
-          }
+        const target = selectedIndex >= 0 && selectedIndex < results.length
+          ? results[selectedIndex]
+          : results.length === 1 ? results[0] : null;
+        if (!target) break;
+        if (target.type === 'person' && target.tmdbId) {
+          setSearchText(target.title);
+          setIsSearching(true);
+          const credits = await searchPersonCredits(target.tmdbId);
+          setResults(credits);
+          setIsSearching(false);
+        } else if (target.type === 'person') {
+          setSearchText(target.title);
+          performSearch(target.title);
+        } else {
+          navigate(
+            target.type === 'movie'
+              ? `/movie/${target.imdbId}`
+              : `/tv/${target.imdbId}`
+          );
+          setSearchText('');
+          setResults([]);
+          setHasSearched(false);
         }
         break;
       case 'Escape':
@@ -191,9 +182,16 @@ export const HomePage: FC = () => {
     };
   }, []);
 
-  const handleResultSelect = (result?: SearchResult) => {
-    if (result?.type === 'person') {
-      // Re-search with person's name to show their filmography
+  const handleResultSelect = async (result?: SearchResult) => {
+    if (result?.type === 'person' && result.tmdbId) {
+      setSearchText(result.title);
+      setIsSearching(true);
+      const credits = await searchPersonCredits(result.tmdbId);
+      setResults(credits);
+      setIsSearching(false);
+      return;
+    } else if (result?.type === 'person') {
+      // Fall back to re-search if no TMDB id
       setSearchText(result.title);
       performSearch(result.title);
       return;

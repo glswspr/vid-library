@@ -6,3 +6,5 @@ Task 3: complete (commits 30cec64..0dd4495, tests: npm test -- src/services/sear
 Task 4: complete (commits 0dd4495..481f834, tests: npm test -- src/services/search.test.ts → 4/4 passed)
 Task 5: complete (commits 481f834..f5932a0, tests: npm test -- src/components/SearchResults.test.tsx → 1/1 passed)
 Task 6: complete (commits f5932a0..9419e22, tests: npm test → 35/35 passed)
+Task 7: complete (commits 9419e22..8c99fea, tests: npm test → 35/35 passed, build: npm run build → OK)
+Review package: .superpowers/sdd/2026-11-21-extended-search/review-8b3f037..8c99fea.diff (65414 bytes, built with git directly; the bundled bash scripts need WSL, not installed)

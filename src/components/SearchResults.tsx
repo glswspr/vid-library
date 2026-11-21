@@ -1,7 +1,8 @@
 import type { FC, KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { SearchResult } from '../services/catalog';
-import { Film, Tv, Hash, Star, User } from 'lucide-react';
+import { Film, Tv, Hash, Star, User, Share2, Check } from 'lucide-react';
+import { useState } from 'react';
 
 interface SearchResultsProps {
   results: SearchResult[];
@@ -9,8 +10,33 @@ interface SearchResultsProps {
   selectedIndex: number;
 }
 
+/** Copy `text` to the clipboard. Returns true on success. */
+async function copyLink(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      return true;
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
+}
+
 export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selectedIndex }) => {
   const navigate = useNavigate();
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleClick = (result: SearchResult) => {
     if (result.type === 'person') {
@@ -24,6 +50,17 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
         : `/tv/${result.imdbId}`;
     navigate(targetUrl);
     onSelect();
+  };
+
+  const handleShare = async (e: React.MouseEvent, result: SearchResult) => {
+    e.stopPropagation();
+    // Build absolute URL from current origin
+    const url = result.type === 'person'
+      ? `${window.location.origin}/?q=${encodeURIComponent(result.title)}`
+      : `${window.location.origin}${result.type === 'movie' ? '/movie' : '/tv'}/${result.imdbId}`;
+    await copyLink(url);
+    setCopiedId(result.imdbId);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleKeyDown = (e: KeyboardEvent, result: SearchResult) => {
@@ -97,6 +134,23 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
                 )}
               </div>
 
+              {/* Share button */}
+              <button
+                onClick={(e) => handleShare(e, result)}
+                className={`p-2 rounded-lg transition-colors shrink-0 ${
+                  copiedId === result.imdbId
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/60 hover:text-slate-200'
+                } border border-slate-700/50`}
+                aria-label={`Copy link to ${result.title}`}
+              >
+                {copiedId === result.imdbId ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+              </button>
+
               {isSelected && (
                 <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shrink-0 shadow-lg shadow-cyan-400/50" />
               )}
@@ -166,6 +220,23 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
                 IMDB: {result.imdbId}
               </p>
             </div>
+
+            {/* Share button */}
+            <button
+              onClick={(e) => handleShare(e, result)}
+              className={`p-2 rounded-lg transition-colors shrink-0 ${
+                copiedId === result.imdbId
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/60 hover:text-slate-200'
+              } border border-slate-700/50`}
+              aria-label={`Copy link to ${result.title}`}
+            >
+              {copiedId === result.imdbId ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Share2 className="w-4 h-4" />
+              )}
+            </button>
 
             {/* Selected indicator */}
             {isSelected && (
