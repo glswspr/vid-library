@@ -136,19 +136,35 @@ export const HomePage: FC = () => {
         e.preventDefault();
         if (selectedIndex >= 0 && selectedIndex < results.length) {
           const result = results[selectedIndex];
-          navigate(
-            result.type === 'movie'
-              ? `/movie/${result.imdbId}`
-              : `/tv/${result.imdbId}`
-          );
+          if (result.type === 'person') {
+            setSearchText(result.title);
+            performSearch(result.title);
+          } else {
+            navigate(
+              result.type === 'movie'
+                ? `/movie/${result.imdbId}`
+                : `/tv/${result.imdbId}`
+            );
+            setSearchText('');
+            setResults([]);
+            setHasSearched(false);
+          }
         } else if (results.length === 1) {
           // Auto-navigate if only one result
           const result = results[0];
-          navigate(
-            result.type === 'movie'
-              ? `/movie/${result.imdbId}`
-              : `/tv/${result.imdbId}`
-          );
+          if (result.type === 'person') {
+            setSearchText(result.title);
+            performSearch(result.title);
+          } else {
+            navigate(
+              result.type === 'movie'
+                ? `/movie/${result.imdbId}`
+                : `/tv/${result.imdbId}`
+            );
+            setSearchText('');
+            setResults([]);
+            setHasSearched(false);
+          }
         }
         break;
       case 'Escape':
@@ -175,7 +191,13 @@ export const HomePage: FC = () => {
     };
   }, []);
 
-  const handleResultSelect = () => {
+  const handleResultSelect = (result?: SearchResult) => {
+    if (result?.type === 'person') {
+      // Re-search with person's name to show their filmography
+      setSearchText(result.title);
+      performSearch(result.title);
+      return;
+    }
     setSearchText('');
     setResults([]);
     setHasSearched(false);

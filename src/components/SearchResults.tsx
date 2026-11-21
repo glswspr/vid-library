@@ -5,7 +5,7 @@ import { Film, Tv, Hash, Star, User } from 'lucide-react';
 
 interface SearchResultsProps {
   results: SearchResult[];
-  onSelect: () => void;
+  onSelect: (result?: SearchResult) => void;
   selectedIndex: number;
 }
 
@@ -15,7 +15,7 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
   const handleClick = (result: SearchResult) => {
     if (result.type === 'person') {
       // Re-search with person's name to show their filmography
-      onSelect();
+      onSelect(result);
       return;
     }
     const targetUrl =
