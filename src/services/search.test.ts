@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SearchResult } from './search';
 import { searchByTitle } from './search';
 
@@ -9,6 +9,10 @@ vi.mock('../config', () => ({
   canUseTmdb: () => true,
   tmdbDirectUrl: (path: string) => `https://api.themoviedb.org/3${path}?api_key=test-key`,
   tmdbFetchJson: async () => null,
+}));
+
+vi.mock('./rows', () => ({
+  getMovieGenres: async () => [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }]
 }));
 
 describe('searchByTitle extended types', () => {
@@ -44,6 +48,9 @@ describe('searchByTitle extended types', () => {
           json: async () => ({ imdb_id: 'tt0123456' })
         };
       }
+      if (urlStr.includes('/genre/movie/list')) {
+        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
+      }
       return { ok: false, json: async () => ({}) };
     });
 
@@ -52,5 +59,40 @@ describe('searchByTitle extended types', () => {
     expect(person).toBeDefined();
     expect(person?.title).toBe('Tom Hanks');
     expect(person?.known_for_department).toBe('Acting');
+  });
+});
+
+describe('searchByTitle genre detection', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('detects genre query and uses discover endpoint', async () => {
+    // Mock fetch for discover endpoint
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/discover/movie')) {
+        return {
+          ok: true,
+          json: async () => ({ results: [{ id: 123, title: 'Action Movie', media_type: 'movie', poster_path: '/action.jpg', vote_average: 8.0, vote_count: 1000, release_date: '2020-01-01' }] })
+        };
+      }
+      if (urlStr.includes('/search/multi')) {
+        return { ok: true, json: async () => ({ results: [] }) };
+      }
+      if (urlStr.includes('/genre/movie/list')) {
+        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
+      }
+      return { ok: false, json: async () => ({}) };
+    });
+
+    const results = await searchByTitle('action');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].type).toBe('movie');
   });
 });

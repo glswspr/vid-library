@@ -1,4 +1,5 @@
 import { TMDB_API_KEY, OMDB_API_KEY, FALLBACK_TMDB_API_KEY, canUseTmdb, tmdbDirectUrl } from './config';
+import { getMovieGenres } from './rows';
 
 export interface SearchResult {
   imdbId: string;
@@ -35,6 +36,20 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
   const cleanQuery = query.trim();
   if (!cleanQuery || cleanQuery.length < 2) return [];
 
+  // 0. Genre detection — if query matches a known genre, use discover
+  try {
+    const genres = await getMovieGenres();
+    const matchedGenre = genres.find(g => g.name.toLowerCase() === cleanQuery.toLowerCase());
+    if (matchedGenre) {
+      const discoverResults = await searchDiscoverByGenre(matchedGenre.id, signal);
+      if (discoverResults.length > 0) return discoverResults;
+      // Fall through to normal search if discover returns nothing
+    }
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    /* ignore genre detection errors */
+  }
+
   // 1. TMDB — richest results incl. posters
   const tmdbResults = await searchTmdb(cleanQuery, signal);
   if (tmdbResults.length > 0) return tmdbResults;
@@ -48,6 +63,40 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
   if (omdbResults.length > 0) return omdbResults.slice(0, 15);
 
   return [];
+}
+
+async function searchDiscoverByGenre(genreId: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const tmdbKey = TMDB_API_KEY || FALLBACK_TMDB_API_KEY;
+  if (!tmdbKey || !canUseTmdb(tmdbKey)) return [];
+
+  try {
+    const params = new URLSearchParams({
+      sort_by: 'popularity.desc',
+      with_genres: String(genreId),
+      'vote_average.gte': '6.0',
+      'vote_count.gte': '500',
+      page: '1',
+    });
+    if (tmdbKey) params.set('api_key', tmdbKey);
+
+    const res = await fetch(tmdbDirectUrl(`/discover/movie?${params.toString()}`, tmdbKey), { signal });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const items = (data.results || []).slice(0, 15);
+
+    return items.map((item: any) => ({
+      imdbId: item.id?.toString().startsWith('tt') ? item.id : `tmdb:${item.id}`,
+      title: item.title || 'Untitled',
+      year: (item.release_date || '').substring(0, 4) || undefined,
+      type: 'movie' as const,
+      posterUrl: item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : undefined,
+      rating: item.vote_average ? item.vote_average.toFixed(1) : undefined,
+    }));
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    console.warn('Genre discover search failed:', e);
+    return [];
+  }
 }
 
 async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
