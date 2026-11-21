@@ -88,7 +88,7 @@ export const SearchResults: FC<SearchResultsProps> = ({ results, onSelect, selec
 
                 {result.known_for && result.known_for.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {result.known_for.slice(0, 3).map((kf, ki) => (
+                    {result.known_for.slice(0, 3).map((kf) => (
                       <span key={kf.imdbId} className="text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded border border-slate-700/50">
                         {kf.title} ({kf.type === 'movie' ? 'Movie' : 'TV'})
                       </span>

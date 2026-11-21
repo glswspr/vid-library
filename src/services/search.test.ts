@@ -29,8 +29,8 @@ describe('searchByTitle extended types', () => {
   });
 
   it('searchByTitle returns person results for actor names', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      const urlStr = url.toString();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
+      const urlStr = input.toString();
       if (urlStr.includes('/search/multi')) {
         return {
           ok: true,
@@ -65,7 +65,7 @@ describe('searchByTitle extended types', () => {
 describe('searchByTitle genre detection', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.spyOn(global, 'fetch');
+    vi.spyOn(globalThis, "fetch");
   });
 
   afterEach(() => {
@@ -74,8 +74,8 @@ describe('searchByTitle genre detection', () => {
 
   it('detects genre query and uses discover endpoint', async () => {
     // Mock fetch for discover endpoint
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      const urlStr = url.toString();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
+      const urlStr = input.toString();
       if (urlStr.includes('/discover/movie')) {
         return {
           ok: true,
@@ -100,7 +100,7 @@ describe('searchByTitle genre detection', () => {
 describe('searchByTitle Wikidata entity search', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.spyOn(global, 'fetch');
+    vi.spyOn(globalThis, "fetch");
   });
 
   afterEach(() => {
@@ -108,8 +108,8 @@ describe('searchByTitle Wikidata entity search', () => {
   });
 
   it('falls back to Wikidata entity search for characters', async () => {
-    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
-      const urlStr = url.toString();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL): Promise<any> => {
+      const urlStr = input.toString();
       if (urlStr.includes('/search/multi')) {
         return { ok: true, json: async () => ({ results: [] }) };
       }

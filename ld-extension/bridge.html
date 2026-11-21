@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>LD Habits Bridge</title></head>
+<body>
+<script>
+// Bridge between the LD Habits Tracker extension and the local Life Dashboard.
+// Reads chrome.storage.local and replies to postMessage from the dashboard.
+// The dashboard opens this page in a hidden iframe.
+(function () {
+  const KEY = "ldWatchSeconds";
+
+  function todayKey() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function keyForOffset(offset) {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+  function lastNDays(map, n) {
+    const out = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const k = keyForOffset(-i);
+      out.push({ date: k, domains: map[k] || {} });
+    }
+    return out;
+  }
+
+  window.addEventListener("message", async ev => {
+    const msg = ev.data;
+    if (!msg || msg.source !== "ld-dashboard" || msg.type !== "get-watch-stats") return;
+
+    const map = await new Promise(r => chrome.storage.local.get([KEY], res => r(res[KEY] || {})));
+    const days = lastNDays(map, 7);
+    const today = map[todayKey()] || {};
+
+    let weekTotal = 0;
+    for (const d of days) for (const s of Object.values(d.domains)) weekTotal += s;
+
+    const reply = {
+      source: "ld-habits-bridge",
+      today: today,
+      week: weekTotal,
+      days: days
+    };
+    ev.source.postMessage(reply, "*");
+  });
+})();
+</script>
+</body>
+</html>
