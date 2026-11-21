@@ -62,6 +62,10 @@ export async function searchByTitle(query: string, signal?: AbortSignal): Promis
   const omdbResults = await searchOmdb(cleanQuery, signal);
   if (omdbResults.length > 0) return omdbResults.slice(0, 15);
 
+  // 4. Wikidata entity search (characters, etc.) — last resort
+  const entityResults = await searchWikidataEntities(cleanQuery, signal);
+  if (entityResults.length > 0) return entityResults;
+
   return [];
 }
 
@@ -228,6 +232,104 @@ async function searchWikidata(cleanQuery: string, signal?: AbortSignal): Promise
   } catch (e) {
     if (isAbort(e)) throw e;
     console.warn('Wikidata search failed:', e);
+    return [];
+  }
+}
+
+async function searchWikidataEntities(cleanQuery: string, signal?: AbortSignal): Promise<SearchResult[]> {
+  try {
+    // Step 1: search for matching Wikidata entities
+    const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(cleanQuery)}&language=en&limit=10&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl, { signal });
+    if (!searchRes.ok) return [];
+    const searchData = await searchRes.json();
+    const entities = searchData?.search || [];
+    if (entities.length === 0) return [];
+
+    // Step 2: fetch claims to determine type and associated work
+    const entityIds = entities.map((e: any) => e.id).join('|');
+    const claimsUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entityIds}&props=claims&format=json&origin=*`;
+    const claimsRes = await fetch(claimsUrl, { signal });
+    if (!claimsRes.ok) return [];
+    const claimsData = await claimsRes.json();
+    const entityData = claimsData?.entities || {};
+
+    const results: SearchResult[] = [];
+
+    for (const entity of entities) {
+      const claims = entityData[entity.id]?.claims;
+      if (!claims) continue;
+
+      let imdbId: string | undefined;
+      let type: 'movie' | 'tv' = 'movie';
+      let year: string | undefined;
+
+      // Try to get associated work (P361 = part of, P1441 = present in work)
+      const partOf = claims.P361 || claims.P1441 || [];
+      for (const stmt of partOf) {
+        const workQid = stmt?.mainsnak?.datavalue?.value?.id;
+        if (workQid) {
+          // Fetch the work's claims to get IMDb ID
+          try {
+            const workUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${workQid}&props=claims&format=json&origin=*`;
+            const workRes = await fetch(workUrl, { signal });
+            if (workRes.ok) {
+              const workData = await workRes.json();
+              const workClaims = workData?.entities?.[workQid]?.claims;
+              const imdbClaim = workClaims?.P345;
+              if (imdbClaim) {
+                imdbId = imdbClaim[0]?.mainsnak?.datavalue?.value;
+              }
+              // Determine type from work's instance of
+              const workInstanceOf = workClaims?.P31 || [];
+              for (const wStmt of workInstanceOf) {
+                const qid = wStmt?.mainsnak?.datavalue?.value?.id;
+                if (qid === 'Q5398426' || qid === 'Q15416' || qid === 'Q254440') {
+                  type = 'tv';
+                  break;
+                }
+                if (qid === 'Q11424' || qid === 'Q24869') {
+                  type = 'movie';
+                  break;
+                }
+              }
+              // Get year from work
+              const workPubDate = workClaims?.P577 || workClaims?.P580;
+              if (workPubDate) {
+                const rawTime = workPubDate[0]?.mainsnak?.datavalue?.value?.time;
+                if (rawTime) {
+                  const match = (rawTime as string).match(/^\+?(\d{4})/);
+                  if (match) year = match[1];
+                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // If no associated work found, use entity's own IMDb ID if available
+      if (!imdbId) {
+        const entityImdb = claims.P345;
+        if (entityImdb) {
+          imdbId = entityImdb[0]?.mainsnak?.datavalue?.value;
+        }
+      }
+
+      if (!imdbId || !(imdbId as string).startsWith('tt')) continue;
+
+      results.push({
+        imdbId: imdbId as string,
+        title: entity.label || 'Unknown Character',
+        year,
+        type,
+        posterUrl: undefined,
+      });
+    }
+
+    return results;
+  } catch (e) {
+    if (isAbort(e)) throw e;
+    console.warn('Wikidata entity search failed:', e);
     return [];
   }
 }

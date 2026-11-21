@@ -96,3 +96,64 @@ describe('searchByTitle genre detection', () => {
     expect(results[0].type).toBe('movie');
   });
 });
+
+describe('searchByTitle Wikidata entity search', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('falls back to Wikidata entity search for characters', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: string) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/search/multi')) {
+        return { ok: true, json: async () => ({ results: [] }) };
+      }
+      if (urlStr.includes('wbsearchentities')) {
+        return {
+          ok: true,
+          json: async () => ({
+            search: [{ id: 'Q123', label: 'Jon Snow', description: 'Game of Thrones character' }]
+          })
+        };
+      }
+      if (urlStr.includes('wbgetentities')) {
+        return {
+          ok: true,
+          json: async () => ({
+            entities: {
+              Q123: {
+                claims: {
+                  P31: [{ mainsnak: { datavalue: { value: { id: 'Q5' } } } }],
+                  P361: [{ mainsnak: { datavalue: { value: { id: 'Q12345' } } } }]
+                }
+              },
+              Q12345: {
+                claims: {
+                  P345: [{ mainsnak: { datavalue: { value: 'tt0944947' } } }],
+                  P31: [{ mainsnak: { datavalue: { value: { id: 'Q5398426' } } } }],
+                  P577: [{ mainsnak: { datavalue: { value: { time: '+2011-04-17T00:00:00Z' } } } }]
+                }
+              }
+            }
+          })
+        };
+      }
+      if (urlStr.includes('omdbapi.com')) {
+        return { ok: true, json: async () => ({ Response: 'False' }) };
+      }
+      if (urlStr.includes('/genre/movie/list')) {
+        return { ok: true, json: async () => ({ genres: [{ id: 28, name: 'Action' }, { id: 878, name: 'Science Fiction' }] }) };
+      }
+      return { ok: false, json: async () => ({}) };
+    });
+
+    const results = await searchByTitle('Jon Snow');
+    const character = results.find(r => r.title === 'Jon Snow');
+    expect(character).toBeDefined();
+  });
+});
