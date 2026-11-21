@@ -62,13 +62,29 @@ async function searchTmdb(cleanQuery: string, signal?: AbortSignal): Promise<Sea
 
     const data = await searchRes.json();
     const items = (data.results || []).filter(
-      (item: any) => item.media_type === 'movie' || item.media_type === 'tv'
+      (item: any) => item.media_type === 'movie' || item.media_type === 'tv' || item.media_type === 'person'
     );
     if (items.length === 0) return [];
 
     // Cap the per-item IMDb lookups so a search stays snappy on TV hardware.
     const results: SearchResult[] = [];
     for (const item of items.slice(0, 8)) {
+      if (item.media_type === 'person') {
+        results.push({
+          imdbId: `tmdb_person:${item.id}`,
+          title: item.name || 'Unknown',
+          type: 'person',
+          known_for_department: item.known_for_department,
+          known_for: item.known_for?.slice(0, 3).map((kf: any) => ({
+            imdbId: kf.id ? `tmdb:${kf.id}` : 'unknown',
+            title: kf.title || kf.name || 'Unknown',
+            type: (kf.media_type === 'movie' ? 'movie' : 'tv') as 'movie' | 'tv',
+            posterUrl: kf.poster_path ? `https://image.tmdb.org/t/p/w92${kf.poster_path}` : undefined,
+          })) || [],
+          posterUrl: item.profile_path ? `https://image.tmdb.org/t/p/w92${item.profile_path}` : undefined,
+        });
+        continue;
+      }
       let imdbId: string | undefined;
       try {
         const extRes = await fetch(tmdbDirectUrl(`/${item.media_type}/${item.id}/external_ids`, tmdbKey), { signal });
