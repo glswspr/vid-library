@@ -4,9 +4,11 @@ export interface SearchResult {
   imdbId: string;
   title: string;
   year?: string;
-  type: 'movie' | 'tv';
+  type: 'movie' | 'tv' | 'person';
   posterUrl?: string;
   rating?: string;
+  known_for_department?: string;
+  known_for?: SearchResult[];
 }
 
 /**
