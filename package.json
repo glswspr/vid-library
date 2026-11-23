@@ -11,7 +11,7 @@
     "dev": "vite",
     "test": "vitest run",
     "build": "tsc -b && vite build",
-    "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html', 'dist/200.html')\"",
+    "postbuild": "node scripts/postbuild.mjs",
     "deploy": "npm run build && npm run deploy:vercel && npm run deploy:surge",
     "deploy:vercel": "node scripts/deploy-vercel.mjs",
     "deploy:surge": "npx surge dist v1d.surge.sh",
