@@ -1,189 +1,237 @@
-# VidRock, VidAPI & VidSrc Provider Documentation
+# Embed Provider Documentation
 
-This document describes the exact endpoints, request formats, query parameters, embed mechanics, player events, CORS behavior, and domain whitelisting details for **VidRock** (`vidrock.ru`), **VidAPI** (`vidapi.ru`) and **VidSrc** (`vidsrc.to`).
+This document describes the endpoints, parameters, resume behaviour and framing
+rules of the embed servers the app ships with. Each one was played in a real
+browser inside a cross-origin iframe, for a movie and for a TV episode, on
+2026-11-25.
 
 ---
 
-## 1. VidAPI (`https://vidapi.ru/`)
+## Default order
 
-### Overview
-VidAPI is a free video embed provider and aggregator supporting movies and TV shows mapped via IMDB or TMDB IDs. Embeds are served from `https://vaplayer.ru/embed/...`.
+| # | Server | Domain | Resume | Notes |
+| :-- | :--- | :--- | :--- | :--- |
+| 1 | VidPrime | `vidprime.top` | `startAt` | Started first time for every title tried. |
+| 2 | VixSrc | `vixsrc.to` | `startAt` | TMDB or IMDB id. |
+| 3 | VidNest | `vidnest.pro` | `t` | The only server that accepts inbound `postMessage` commands. |
+| 4 | VidLink | `vidlink.pro` | none | Its own player keeps progress; `startAt` is ignored. |
+| 5 | VidSrc | `vidsrc.to` | none | Walks to `vidsrc.sh` and its CDN host before playing. |
+| 6 | Mapple | `mappletv.uk` | none | Redirects to `mapple.fun`. |
+| 7 | VidZee | `player.vidzee.wtf` | none | Frames and plays; the earlier `X-Frame-Options` block is gone. |
+| 8 | VidCore | `vidcore.io` | none | A few titles answer "(555) OOPS" instead of a stream. |
+| 9 | Peachify | `peachify.net` | none | `peachify.top` is dead; `.net` is live. |
+| 10 | VidAPI | `vaplayer.ru` | none | Needs a one-time gate pass on `vaplayer.ru` before an embed plays. |
+| 11 | 111Movies | `111movies.net` | none | Player host shows a Cloudflare check before the stream. |
 
-### Endpoints
+---
 
-#### Movie Embed
-- **Path Endpoint**: `GET https://vaplayer.ru/embed/movie/{id}`
-  - `{id}`: IMDB ID (with `tt` prefix, e.g. `tt23779058`) OR numeric TMDB ID (e.g. `1147301`).
-- **Query Endpoint**: `GET https://vaplayer.ru/embed/movie?imdb={imdb_id}` OR `?tmdb={tmdb_id}`
+## 1. VidPrime (`https://vidprime.top`)
 
-#### TV Show Embed
-- **Path Endpoint**: `GET https://vaplayer.ru/embed/tv/{id}/{season}/{episode}`
-  - Format 1: `/embed/tv/205715/1/1`
-  - Format 2: `/embed/tv/tt13159924/S01E01`
-  - Format 3: `/embed/tv/205715/1-1`
-- **Query Endpoint**: `GET https://vaplayer.ru/embed/tv?tmdb={tmdb_id}&season={season}&episode={episode}`
-
-### Query Parameters
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vidprime.top/movie/{tmdbId}` |
+| TV | `GET https://vidprime.top/tv/{tmdbId}/{season}/{episode}` |
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `ds_lang` / `lang` | String | Default subtitle language ISO code (`en`, `sv`, `fa`) or OpenSubtitles code (`eng`, `swe`, `per`). Auto-activates matching subtitles. |
-| `sub_url` / `sub_file` | URL | URL-encoded direct SRT/VTT remote subtitle track URL. |
-| `sub_label` | String | Subtitle track label. |
-| `sub_lang` | String | Subtitle language code (default: `en`). |
-| `sub_default` | Boolean | Set subtitle as default track (`true`/`false`). |
-| `resumeAt` / `startAt` | Float | Resume playback at specified timestamp (seconds). |
-| `autoplay` | `0` or `1` | Enable (`1`) or disable (`0`) autoplay. |
-| `primaryColor` / `color` | Hex | Primary UI color code (e.g., `#e50914`). |
-| `title` | String | Custom title overlay string (URL encoded). |
-| `poster` | URL | Custom thumbnail/poster image URL. |
-| `showTitle` | Boolean | Display title overlay (`true`/`false`). |
-| `controls` | Boolean | Show or hide player controls bar (`true`/`false`). |
-| `overlay` | Boolean | Enable or disable hover gradient overlay (`true`/`false`). |
-
-### Metadata & Listing APIs (Public CORS Enabled `Access-Control-Allow-Origin: *`)
-
-#### Latest Movies
-- **Endpoint**: `GET https://vidapi.ru/movies/latest/page-{PAGE}.json`
-- **Response**:
-  ```json
-  {
-    "page": 1,
-    "per_page": 24,
-    "total": 92866,
-    "total_pages": 3870,
-    "items": [
-      {
-        "tmdb_id": 1281091,
-        "imdb_id": "tt34388152",
-        "title": "Officer on Duty",
-        "year": "2025",
-        "poster_url": "https://image.tmdb.org/t/p/original/...",
-        "rating": "7.1",
-        "genre": "Action, Drama",
-        "popularity": "154.2",
-        "type": "movie",
-        "embed_url": "https://vaplayer.ru/embed/movie/tt34388152"
-      }
-    ]
-  }
-  ```
-
-#### Latest TV Shows
-- **Endpoint**: `GET https://vidapi.ru/tvshows/latest/page-{PAGE}.json`
-- **Response**: `items` array with `tmdb_id`, `imdb_id`, `title`, `year`, `poster_url`, `rating`, `genre`, `type: "tv"`.
-
-#### Latest Episodes
-- **Endpoint**: `GET https://vidapi.ru/episodes/latest/page-{PAGE}.json`
-- **Response**: `items` array with `show_tmdb_id`, `season_number`, `episode_number`, `episode_title`, `show_title`, `embed_url`.
-
-### Player Events (`postMessage`)
-VidAPI player sends `PLAYER_EVENT` window messages to the parent frame:
-```json
-{
-  "type": "PLAYER_EVENT",
-  "data": {
-    "player_info": {
-      "imdb": "tt23779058",
-      "tmdb": 1147301,
-      "mediaType": "movie",
-      "season": null,
-      "episode": null,
-      "title": "Movie Title",
-      "poster": "https://..."
-    },
-    "player_status": "playing",
-    "player_progress": 125.4,
-    "player_duration": 7200
-  }
-}
-```
-Statuses: `"playing"`, `"paused"`, `"seeked"`, `"completed"`.
-
-> **Note on Playback Controls**: VidAPI does **not** expose inbound `postMessage` commands to control play/pause/seek from the host page. The native player controls inside the iframe must be used for playback interaction.
-
-### Domain Whitelisting
-VidAPI supports domain whitelisting via the dashboard at `vadash.app`.
-- Public embeds without restriction function out-of-the-box on open domains.
-- If domain protection is enabled for an API key or account, the hosting site domain (e.g. `your-app.pages.dev` or `your-domain.com`) must be listed under **Domains → Allowed Sites**.
+| `t` / `startAt` | Seconds or `1h5m30s` | Start position. Verified: `startAt=300` starts at 5:00. |
+| `autoplay` | `1` | Start when ready; stays muted until the viewer interacts. |
+| `theme` | Hex | Accent colour. |
+| `episodes` | `1` | TV only. Adds the episode browser and next-episode button. |
+| `autonext` | `1` | TV only. Plays the next episode after a countdown. |
 
 ---
 
-## 2. VidRock (`https://vidrock.ru/`)
+## 2. VixSrc (`https://vixsrc.to`)
 
-### Overview
-VidRock is a high-availability video embed provider. Embeds are loaded directly from `https://vidrock.ru/embed/...`.
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vixsrc.to/movie/{id}` |
+| TV | `GET https://vixsrc.to/tv/{id}/{season}/{episode}` |
 
-### Endpoints
-
-#### Movie Embed
-- **Endpoint**: `GET https://vidrock.ru/embed/movie/{id}`
-  - `{id}`: IMDB ID (e.g. `tt23779058`) or TMDB ID.
-
-#### TV Show Embed
-- **Endpoint**: `GET https://vidrock.ru/embed/tv/{id}/{season}/{episode}`
-  - `{id}`: IMDB ID or TMDB ID.
-  - `{season}`: Numeric season index.
-  - `{episode}`: Numeric episode index.
-
-### Query Parameters
+`{id}` may be a TMDB id or an IMDb id.
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `ds_lang` / `lang` | String | Subtitle language ISO code (`en`, `sv`, `fa`). |
-| `resumeAt` | Float | Resume timestamp in seconds. |
-| `autoplay` | Boolean | Auto-start playback (`true`/`false` or `1`/`0`). |
-| `autonext` | Boolean | Enable automatic next episode transition (`true`/`false`). |
+| `startAt` | Seconds | Start position. Verified. |
+| `autoplay` | Boolean | Start when ready. |
+| `primaryColor` / `secondaryColor` | Hex without `#` | Player colours. |
+| `lang` | ISO code | Preferred audio track. |
 
-### Player Events (`postMessage`)
-VidRock emits compatible status messages to `window.parent`:
-```json
-{
-  "type": "PLAYER_EVENT",
-  "data": {
-    "event": "playing",
-    "currentTime": 125.4,
-    "duration": 7200
-  }
-}
-```
+Events: `PLAYER_EVENT` with `event` in `play`, `pause`, `seeked`, `ended`,
+`timeupdate`, and `currentTime`, `duration`, `video_id` in `data`.
 
 ---
 
-## 3. VidSrc (`https://vidsrc.to/`)
+## 3. VidNest (`https://vidnest.pro`)
 
-### Overview
-VidSrc is a free video embed provider and aggregator supporting movies and TV shows mapped via IMDB or TMDB IDs. Embeds are served directly from `https://vidsrc.to/embed/...`.
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vidnest.pro/movie/{id}` |
+| TV | `GET https://vidnest.pro/tv/{id}/{season}/{episode}` |
+| TV, short | `GET https://vidnest.pro/tv/{id}-{season}-{episode}` |
 
-### Endpoints
-
-#### Movie Embed
-- **Endpoint**: `GET https://vidsrc.to/embed/movie/{id}`
-  - `{id}`: IMDB ID (with `tt` prefix, e.g. `tt23779058`) OR numeric TMDB ID (e.g. `1147301`).
-
-#### TV Show Embed
-- **Endpoint**: `GET https://vidsrc.to/embed/tv/{id}/{season}/{episode}`
-  - `{id}`: IMDB ID or TMDB ID.
-  - `{season}`: Numeric season index.
-  - `{episode}`: Numeric episode index.
-
-### Query Parameters
+`{id}` may be a TMDB id or an IMDb id.
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `resumeAt` | Float | Resume timestamp in seconds. |
-| `autoplay` | Boolean | Auto-start playback (`1`/`0`). |
-| `lang` | String | Subtitle language code. |
+| `t` / `startAt` | Seconds or `1h5m30s` | Start position. Verified. An explicit start beats a saved position. |
+| `theme` | Hex | Accent colour. |
+| `autoplay` | `1` | Start when ready. |
+| `episodes` | `1` | TV only. Episode list and next-episode button. |
+| `autonext` | `1` | TV only. Auto-advance with an "Up next" card. |
 
-### Domain Whitelisting
-VidSrc embeds are served on open domains without registration. If a stream fails to load, fall back to the other servers via the player UI pills.
+Events carry `source: 'vidnext-player'`. It also accepts inbound actions
+(`play`, `pause`, `seek`, `setVolume`, `mute`, `setTheme`, `enterFullscreen`),
+which no other shipped server does.
+
+---
+
+## 4. VidLink (`https://vidlink.pro`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vidlink.pro/movie/{tmdbId}` |
+| TV | `GET https://vidlink.pro/tv/{tmdbId}/{season}/{episode}` |
+| Anime | `GET https://vidlink.pro/anime/{malId}/{number}/{subOrDub}` |
+
+Parameters: `primaryColor`, `secondaryColor`, `iconColor`, `icons`, `title`,
+`poster`, `autoplay`, `nextbutton`, `player=jw`, `sub_file`, `sub_label`,
+`fallback_url`. `startAt` is documented but ignored; the player keeps its own
+progress. Its CDN host returns 428 for some titles, which is why it is not
+first.
 
 ---
 
-## 4. Comparative Summary & Architectural Decisions
+## 5. VidSrc (`https://vidsrc.to`)
 
-1. **Player Control**: No provider exposes inbound `postMessage` command handlers. Playback uses the provider's own controls inside the iframe. Resume position is passed as a query parameter when the embed URL is built (`resumeAt`, `progress` or `startAt`, depending on the provider).
-2. **CORS & Authentication**: VidAPI listing endpoints allow public cross-origin CORS requests (`Access-Control-Allow-Origin: *`). No provider requires server secrets for embeds. A client-side web application is sufficient.
-3. **Resiliency**: The player has ten servers. The prev/next arrows walk the order set in Settings, and a failed server falls back automatically. A server can be pinned for one show.
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vidsrc.to/embed/movie/{id}` |
+| TV | `GET https://vidsrc.to/embed/tv/{id}/{season}/{episode}` |
+
+Plays through `vidsrc.sh` and a per-session CDN host. Ad-heavy: the frame
+carries its own popup layer, so the server menu is the way out when it stalls.
+Verified playing both a movie and a TV episode with subtitles.
 
 ---
+
+## 6. Mapple (`https://mappletv.uk`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://mappletv.uk/watch/movie/{tmdbId}` |
+| TV | `GET https://mappletv.uk/watch/tv/{tmdbId}/{season}/{episode}` |
+
+Redirects to `mapple.fun`, which plays. Verified movie and TV. A bare HEAD
+request gets `403`; a framed browser gets the player.
+
+---
+
+## 7. VidZee (`https://player.vidzee.wtf`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://player.vidzee.wtf/embed/movie/{tmdbId}` |
+| TV | `GET https://player.vidzee.wtf/embed/tv/{tmdbId}/{season}/{episode}` |
+
+Verified playing movie and TV in a cross-origin frame. The embed path carries
+no `X-Frame-Options`, so it frames fine.
+
+---
+
+## 8. VidCore (`https://vidcore.io`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vidcore.io/movie/{tmdbId}` |
+| TV | `GET https://vidcore.io/tv/{tmdbId}/{season}/{episode}` |
+
+The `.org` host also works with an `/embed/` path
+(`https://vidcore.org/embed/movie/{id}`) and is kept as a fallback.
+A bare request to `vidcore.io` gets `403` from a bot filter, while
+a real browser plays, which is why an earlier sweep recorded it as dead.
+
+Parameters: `autoplay`, `theme`, `color`, `lang`, `title`, `poster`,
+`disableInfo`, `disableControls`, `showRelated`. Some titles answer
+`(555) OOPS! SOMETHING WENT WRONG` instead of a stream.
+
+---
+
+## 9. Peachify (`https://peachify.net`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://peachify.net/movie/{tmdbId}` |
+| TV | `GET https://peachify.net/tv/{tmdbId}/{season}/{episode}` |
+
+Numeric TMDB id only. `peachify.top` returns Cloudflare `523`; `.net` is live.
+Documents `autoplay` and `startAt` and honours neither, so the app sends no
+position. Subtitles are switched inside the player.
+
+---
+
+## 10. VidAPI (`https://vaplayer.ru`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://vaplayer.ru/embed/movie/{id}` |
+| TV | `GET https://vaplayer.ru/embed/tv/{id}/{season}/{episode}` |
+
+Accept TMDB or IMDB ids. The embed runs a one-time gate pass and then hands the
+frame to a per-session host; the handoff only completes after `vaplayer.ru`
+itself has been opened once in that browser. Verified playing a movie once that
+pass had happened.
+
+---
+
+## 11. 111Movies (`https://111movies.net`)
+
+| Kind | URL |
+| :--- | :--- |
+| Movie | `GET https://111movies.net/movie/{tmdbId}` |
+| TV | `GET https://111movies.net/tv/{tmdbId}/{season}/{episode}` |
+
+Redirects to the player at `player.vidmario.net`. TMDB id only. The player
+shows a Cloudflare check before the stream and shows the title while it waits,
+so a viewer can pass it with one click. It never posts an error, so the app's
+automatic fallback cannot detect it and the server arrows are the way out.
+
+---
+
+## Servers removed on 2026-11-26
+
+| Server | Last known domain | Why it was dropped |
+| :--- | :--- | :--- |
+| VidRock | `vidrock.ru` | The apex frames an ad page (`vinniebags.com/go/...`). `vidrock.to` is the live mirror and is not in this list because a mirror can move again; add it manually if wanted. |
+| Videasy | `player.videasy.to` | Domain no longer resolves. The service announced shutdown for 2026-09-15. |
+| StreamX | `embed.streamxtv.tech` | Domain no longer resolves. |
+
+---
+
+## Networks with filtering (e.g. Iran)
+
+Iran's border gateway allows DNS (UDP/53), HTTP (80/TCP) and HTTPS (443/TCP),
+inspects the TLS SNI, and drops UDP wholesale. An embed iframe therefore loads
+over HTTPS like any other page; what decides its fate is whether that domain's
+SNI is on the blocklist.
+
+Most of the shipped servers sit behind Cloudflare, whose ranges are partly
+whitelisted because many Iranian sites use them. Users can reorder servers in
+**Settings**, and the per-show pin keeps a working choice for one show.
+
+If no server loads, the ISP is inspecting HTTPS traffic, and the answer is a
+tunnel rather than another domain: VLESS/Reality, a WebSocket tunnel, or
+Hysteria 2 with obfuscation.
+
+## Architectural notes
+
+1. **Player control**: only VidNest accepts inbound `postMessage` commands. The
+   others are driven by their own controls, and the app passes a resume position
+   through the provider's query parameter where that works.
+2. **No secrets**: no provider needs a key or an account, so the app stays a
+   client-side application.
+3. **Fallback**: the arrows walk the order set in Settings, a failed server
+   falls back automatically, and a server can be pinned for one show.
+4. **Silent stalls**: a server that shows a challenge or an error inside its own
+   frame posts nothing the app can read. The arrows are the reliable escape.

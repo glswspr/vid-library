@@ -1,6 +1,8 @@
 import type { ProviderId } from '../types';
 import { GENRE_ROWS_MAX } from '../constants';
+import { isProviderId, PROVIDER_IDS } from '../providers/ids';
 import { clearWatchHistory as clearWatchHistoryInStorage } from './storage';
+
 export interface AppSettings {
   defaultProvider: ProviderId;
   autoplayNext: boolean;
@@ -23,26 +25,34 @@ export interface ShowServerPin {
 }
 
 const SETTINGS_KEY = 'vid_library_settings';
-/** Order used before 111Movies and StreamX became the first two servers. */
-const LEGACY_PREFERRED_ORDER: ProviderId[] = ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'];
+
+/**
+ * Default orders used by earlier builds, when those servers still played or the
+ * list was shorter. A stored order that still matches one of them was never
+ * edited by the user, so the new default replaces it. Any other stored order is
+ * kept, minus servers that no longer play. These ids are deliberately outside
+ * `ProviderId`: the first two name servers that are gone, so they only exist to
+ * recognise an old order.
+ */
+const LEGACY_PREFERRED_ORDERS: readonly (readonly string[])[] = [
+  ['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'],
+  ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'],
+  ['vidprime', 'vixsrc', 'vidnest', 'vidlink', 'peachify', 'vidcore'],
+];
 
 const DEFAULTS: AppSettings = {
-  defaultProvider: 'm111',
+  defaultProvider: 'vidprime',
   autoplayNext: true,
   accentColor: '#06b6d4',
   englishOnly: true,
   genreRows: [28, 35, 878], // Action, Comedy, Science Fiction
-  preferredProviders: ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'],
+  preferredProviders: [...PROVIDER_IDS],
   theme: 'dark',
   showDefaultProviders: {},
 };
 
 function isValidProvider(value: unknown): ProviderId | null {
-  if (typeof value !== 'string') return null;
-  if (['vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple', 'm111', 'streamx'].includes(value)) {
-    return value as ProviderId;
-  }
-  return null;
+  return isProviderId(value) ? value : null;
 }
 
 function sanitizeGenreRows(value: unknown): number[] {
@@ -63,6 +73,7 @@ function sanitizeShowDefaultProviders(value: unknown): Record<string, ShowServer
     const provider = typeof val === 'string'
       ? isValidProvider(val)
       : isValidProvider((val as ShowServerPin | null)?.provider);
+    // A pin on a server that no longer exists would strand that show.
     if (!provider) continue;
     const title = typeof val === 'object' && val !== null
       ? (val as ShowServerPin).title
@@ -84,13 +95,14 @@ function sanitizeAccentColor(value: unknown): string {
 }
 
 /**
- * Detect a stored order the user never edited: the previous default array,
- * in the previous order. Only then is it replaced by the new default, so a
- * customised order is never overwritten.
+ * True when a stored order is byte-for-byte one of the old defaults, meaning
+ * the user never touched it. Only then is it replaced, so a customised order
+ * is never overwritten.
  */
-function isLegacyDefaultOrder(stored: ProviderId[]): boolean {
-  return stored.length === LEGACY_PREFERRED_ORDER.length &&
-    stored.every((id, index) => id === LEGACY_PREFERRED_ORDER[index]);
+function isLegacyDefaultOrder(stored: unknown[]): boolean {
+  return LEGACY_PREFERRED_ORDERS.some((legacy) =>
+    stored.length === legacy.length && stored.every((id, index) => id === legacy[index]),
+  );
 }
 
 function readSettings(): AppSettings {
@@ -98,24 +110,33 @@ function readSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    const storedPreferred = Array.isArray(parsed.preferredProviders)
-      ? parsed.preferredProviders.filter(isValidProvider)
-      : DEFAULTS.preferredProviders;
-    const untouchedOrder = isLegacyDefaultOrder(storedPreferred);
+    const stored = Array.isArray(parsed.preferredProviders) ? parsed.preferredProviders : null;
+    const untouchedOrder = stored !== null && isLegacyDefaultOrder(stored);
+    const storedPreferred = stored === null
+      ? DEFAULTS.preferredProviders
+      : stored.filter(isProviderId);
+
+    // Keep the user's own order, minus servers that no longer play. An order
+    // that loses every entry falls back to the defaults.
+    const preferredProviders = untouchedOrder || storedPreferred.length === 0
+      ? DEFAULTS.preferredProviders
+      : storedPreferred;
+
     const storedDefault = isValidProvider(parsed.defaultProvider);
+    // A default pointing at a server that no longer exists would leave the
+    // player stuck on a frame that cannot load, so it resets to the first.
+    const defaultProvider = storedDefault ?? DEFAULTS.defaultProvider;
+
     return {
-      // A user who never changed either value follows the new server 1.
-      defaultProvider: untouchedOrder && storedDefault === 'vidrock'
-        ? DEFAULTS.defaultProvider
-        : storedDefault ?? DEFAULTS.defaultProvider,
+      defaultProvider,
       autoplayNext: typeof parsed.autoplayNext === 'boolean' ? parsed.autoplayNext : DEFAULTS.autoplayNext,
       accentColor: sanitizeAccentColor(parsed.accentColor),
       englishOnly: typeof parsed.englishOnly === 'boolean' ? parsed.englishOnly : DEFAULTS.englishOnly,
       genreRows: sanitizeGenreRows(parsed.genreRows),
-      preferredProviders: untouchedOrder ? DEFAULTS.preferredProviders : storedPreferred,
+      preferredProviders,
       theme: isValidTheme(parsed.theme) ?? DEFAULTS.theme,
       showDefaultProviders: sanitizeShowDefaultProviders(parsed.showDefaultProviders),
-      };
+    };
   } catch {
     return DEFAULTS;
   }

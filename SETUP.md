@@ -95,15 +95,9 @@ IPFS requires no email, no account, no login whatsoever. The site is content-add
 
 ---
 
-## VidAPI Domain Whitelisting
+## Domain Restrictions
 
-Some embeds from VidAPI may restrict playback to whitelisted domains. If the video player shows a "domain not allowed" error after deployment:
-
-1. Go to [vadash.app](https://vadash.app) → **Domains** → **Allowed Sites**
-2. Add your Surge URL (e.g. `my-vid-library-2026.surge.sh`)
-3. Refresh the page — embeds should work
-
-VidRock generally does not enforce domain restrictions.
+Embeds from the six shipped servers are not restricted to whitelisted domains. If a player shows a "domain not allowed" error after deployment, switch server with the arrows beside the server name and pin the one that works.
 
 ---
 

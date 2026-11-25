@@ -1,0 +1,9 @@
+name = "vidlib-download"
+main = "download-worker.js"
+compatibility_date = "2025-06-01"
+
+# The worker needs one secret before it will serve anything:
+#   npx wrangler secret put DOWNLOAD_SECRET --config worker/wrangler.toml
+# Generate it with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+[observability]
+enabled = true

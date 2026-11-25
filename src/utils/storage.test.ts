@@ -1,22 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { getProviderFallbackOrder } from './storage';
+import { PROVIDER_IDS } from '../providers/ids';
 
 describe('getProviderFallbackOrder', () => {
   it('follows the user order exactly', () => {
-    expect(getProviderFallbackOrder(['streamx', 'vidapi'])).toEqual(['streamx', 'vidapi']);
+    expect(getProviderFallbackOrder(['vixsrc', 'vidprime'])).toEqual(['vixsrc', 'vidprime']);
   });
 
   it('does not add servers the user removed from the order', () => {
-    expect(getProviderFallbackOrder(['vidapi'])).toEqual(['vidapi']);
+    expect(getProviderFallbackOrder(['vidprime'])).toEqual(['vidprime']);
   });
 
-  it('ignores invalid ids', () => {
-    expect(getProviderFallbackOrder(['nope' as never, 'vidapi'])).toEqual(['vidapi']);
+  it('ignores ids of servers that no longer exist', () => {
+    expect(getProviderFallbackOrder(['streamx' as never, 'vidprime'])).toEqual(['vidprime']);
   });
 
-  it('uses the full list when the order is empty', () => {
+  it('uses the full live list when the order is empty', () => {
     const order = getProviderFallbackOrder([]);
-    expect(order.length).toBeGreaterThan(1);
-    expect(order[0]).toBe('m111');
+    expect(order).toEqual(PROVIDER_IDS);
+    expect(order[0]).toBe('vidprime');
   });
 });

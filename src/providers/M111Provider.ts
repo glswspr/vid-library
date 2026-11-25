@@ -1,40 +1,18 @@
-import type { VideoProvider, EmbedOptions } from './types';
-import type { PlayerCapabilities, ProviderId } from '../types';
-import { resolveTmdbId } from './tmdbId';
+import { createEmbedProvider } from './BaseEmbedProvider';
 
 /**
- * 111Movies provider (https://111movies.net). The domain redirects straight to
- * its player at https://player.vidlove.cc, which resolves the title by TMDB id:
+ * 111Movies (https://111movies.net). The domain redirects straight to its
+ * player (player.vidmario.net) and resolves the title by TMDB id:
  *   movies: https://111movies.net/movie/{tmdbId}
  *   tv:     https://111movies.net/tv/{tmdbId}/{season}/{episode}
- * Verified playing (movie + TV, up to 1080p). Requires a numeric TMDB id, so
- * IMDB ids are resolved via the TMDB API.
+ * Verified playing movies and TV. The inner player sometimes shows a Cloudflare
+ * check first, which a viewer passes in one click; the frame never reports an
+ * error for it, so the app's error path is not the one that matters here.
  */
-function build111MoviesUrl(options: EmbedOptions): string | Promise<string> {
-  const { id, type, season = 1, episode = 1 } = options;
-
-  if (/^\d+$/.test(id)) return buildUrl(id);
-
-  return resolveTmdbId(id).then((tmdbId) => {
-    if (!tmdbId) {
-      console.warn(`[111Movies] Could not resolve TMDB ID for ${id}, using raw id`);
-      return buildUrl(id);
-    }
-    return buildUrl(tmdbId);
-  });
-
-  function buildUrl(tmdbId: string): string {
-    return type === 'movie'
-      ? `https://111movies.net/movie/${tmdbId}`
-      : `https://111movies.net/tv/${tmdbId}/${season}/${episode}`;
-  }
-}
-
-export const m111Provider: VideoProvider = {
-  id: 'm111' as ProviderId,
+export const m111Provider = createEmbedProvider({
+  id: 'm111',
   name: '111Movies',
-  getEmbedUrl: build111MoviesUrl,
-  getCapabilities(): PlayerCapabilities {
-    return { supportsSubtitles: true, supportsProgress: true, supportsAutoplayNext: false };
-  },
-};
+  movieTemplate: 'https://111movies.net/movie/{id}',
+  tvTemplate: 'https://111movies.net/tv/{id}/{season}/{episode}',
+  resumeParam: null,
+});

@@ -9,6 +9,7 @@ import { searchByTitle, searchPersonCredits } from '../services/catalog';
 import { resolveDirectImdbId, resolveImdbTitle, resolveTmdbFromImdb, detectMediaType } from '../services/metadata';
 import type { SearchResult } from '../services/catalog';
 import { SEARCH_DEBOUNCE_MS, MIN_SEARCH_QUERY_LENGTH } from '../constants';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 export const FOCUS_SEARCH_EVENT = 'vdl:focus-search';
 
@@ -20,6 +21,16 @@ export const Navbar: FC = () => {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  // Phones cannot fit logo + stats + history + search + settings on one row,
+  // so the search field moves to its own row behind a toggle.
+  const isNarrow = !useMediaQuery('(min-width: 768px)');
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+
+  // Opening the field on a phone should put the cursor in it, not make the
+  // user tap twice.
+  useEffect(() => {
+    if (isNarrow && searchOpen) searchInputRef.current?.focus();
+  }, [isNarrow, searchOpen]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -193,21 +204,96 @@ export const Navbar: FC = () => {
     };
   }, []);
 
+  const renderSearchBox = (widthClass: string) => (
+    <div className="relative flex-1 min-w-0">
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        {isSearching ? (
+          <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+        ) : (
+          <Search className="w-4 h-4 text-slate-400" />
+        )}
+      </div>
+
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={searchText}
+        onChange={handleSearchInput}
+        onKeyDown={handleSearchKeyDown}
+        placeholder="Search..."
+        className={`${widthClass} max-w-full bg-slate-800 border-2 border-slate-700 focus:border-cyan-400 rounded-xl pl-10 pr-10 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all`}
+        aria-label="Search movies and TV shows"
+        aria-controls="navbar-search-results"
+        aria-expanded={results.length > 0}
+      />
+
+      {searchText && (
+        <button
+          onClick={handleClearSearch}
+          className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+          aria-label="Clear search"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+
+      {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
+        <div className="absolute left-0 right-0 mt-2 z-10" id="navbar-search-results">
+          {results.length > 0 ? (
+            <SearchResults
+              results={results}
+              onSelect={(result) => {
+                if (result?.type === 'person') {
+                  if (result.tmdbId) {
+                    setSearchText(result.title);
+                    setIsSearching(true);
+                    searchPersonCredits(result.tmdbId).then((credits) => {
+                      setResults(credits);
+                      setIsSearching(false);
+                    });
+                  } else {
+                    setSearchText(result.title);
+                    performSearch(result.title);
+                  }
+                  return;
+                }
+                setSearchText('');
+                setResults([]);
+                setHasSearched(false);
+              }}
+              selectedIndex={selectedIndex}
+            />
+          ) : (
+            <div className="px-4 py-2 text-center text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800/50">
+              <p className="text-xs">No results for <span className="text-slate-300">"{searchText}"</span></p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isSearching && (
+        <div className="absolute left-0 right-0 mt-2 px-4 py-2 text-center text-slate-400 bg-slate-900/30 rounded-xl border border-slate-800/30">
+          <Loader2 className="w-5 h-5 mx-auto mb-2 text-cyan-400 animate-spin" />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <header className="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
-      <nav aria-label="Main" className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        <Link to="/" className="flex items-center gap-2.5 shrink-0">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+      <nav aria-label="Main" className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+        <Link to="/" className="flex items-center gap-2.5 shrink-0 min-w-0">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0">
             <Film className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-lg text-white tracking-tight">
+          <span className="font-bold text-lg text-white tracking-tight truncate">
             Vid<span className="text-cyan-400">Library</span>
           </span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <WatchStats />
-          
+
           <Link
             to="/watch-history"
             className="inline-flex items-center justify-center w-11 h-11 rounded-xl border-2 bg-slate-800 border-slate-700 text-slate-200 hover:border-cyan-500 hover:text-white hover:bg-slate-800/50 transition-colors cursor-pointer"
@@ -216,82 +302,33 @@ export const Navbar: FC = () => {
             <Clock className="w-5 h-5" />
           </Link>
 
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              {isSearching ? (
-                <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4 text-slate-400" />
-              )}
-            </div>
-            
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchText}
-              onChange={handleSearchInput}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search..."
-              className="w-56 bg-slate-800 border-2 border-slate-700 focus:border-cyan-400 rounded-xl pl-10 pr-10 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all"
-              aria-label="Search movies and TV shows"
-              aria-controls="navbar-search-results"
-              aria-expanded={results.length > 0}
-            />
-            
-            {searchText && (
-              <button
-                onClick={handleClearSearch}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                aria-label="Clear search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-            
-            {hasSearched && !isSearching && searchText.trim().length >= MIN_SEARCH_QUERY_LENGTH && (
-              <div className="absolute left-0 right-0 mt-2" id="navbar-search-results">
-                {results.length > 0 ? (
-                  <SearchResults
-                    results={results}
-                    onSelect={(result) => {
-                      if (result?.type === 'person') {
-                        if (result.tmdbId) {
-                          setSearchText(result.title);
-                          setIsSearching(true);
-                          searchPersonCredits(result.tmdbId).then((credits) => {
-                            setResults(credits);
-                            setIsSearching(false);
-                          });
-                        } else {
-                          setSearchText(result.title);
-                          performSearch(result.title);
-                        }
-                        return;
-                      }
-                      setSearchText('');
-                      setResults([]);
-                      setHasSearched(false);
-                    }}
-                    selectedIndex={selectedIndex}
-                  />
-                ) : (
-                  <div className="px-4 py-2 text-center text-slate-500 bg-slate-900/50 rounded-xl border border-slate-800/50">
-                    <p className="text-xs">No results for <span className="text-slate-300">"{searchText}"</span></p>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {isSearching && (
-              <div className="absolute left-0 right-0 mt-2 px-4 py-2 text-center text-slate-400 bg-slate-900/30 rounded-xl border border-slate-800/30">
-                <Loader2 className="w-5 h-5 mx-auto mb-2 text-cyan-400 animate-spin" />
-              </div>
-            )}
-          </div>
-          
+          {isNarrow ? (
+            <button
+              type="button"
+              onClick={() => setSearchOpen((open) => !open)}
+              aria-label={searchOpen ? 'Close search' : 'Open search'}
+              aria-expanded={searchOpen}
+              className={`inline-flex items-center justify-center w-11 h-11 rounded-xl border-2 transition-colors cursor-pointer ${
+                searchOpen
+                  ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-200 hover:border-cyan-500 hover:text-white'
+              }`}
+            >
+              {searchOpen ? <X className="w-5 h-5" /> : <Search className="w-5 h-5" />}
+            </button>
+          ) : (
+            renderSearchBox('w-56 sm:w-64')
+          )}
+
           <SettingsMenu />
         </div>
       </nav>
+
+      {isNarrow && searchOpen && (
+        <div className="px-4 pb-3">
+          {renderSearchBox('w-full')}
+        </div>
+      )}
     </header>
   );
 };

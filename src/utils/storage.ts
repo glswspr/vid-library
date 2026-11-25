@@ -1,5 +1,6 @@
 import type { ProviderId, WatchlistItem, WatchProgress } from '../types';
 import { PROGRESS_FLUSH_DELAY_MS, PROVIDER_MEMORY_MAX_ENTRIES } from '../constants';
+import { PROVIDER_IDS, isProviderId } from '../providers/ids';
 
 // Every storage operation is guarded against quota errors and serialization
 // failures so the app degrades gracefully instead of crashing.
@@ -28,10 +29,9 @@ const KEYS = {
   HEALTH: 'vid_library_server_health',
 };
 
-// Embeds fall back in this order. 111Movies and StreamX are first because
-// they resolve titles by TMDB id and are the most reliable; vidrock/vidapi are
-// CORS-open, videasy is a reliable third option, vidsrc is last (most ad-heavy).
-const VALID_PROVIDERS: ProviderId[] = ['m111', 'streamx', 'vidrock', 'vidapi', 'videasy', 'peachify', 'vidsrc', 'vidcore', 'vidzee', 'mapple'];
+// Embeds fall back in the order the user sets in Settings. When nothing is set,
+// every live provider is tried, first to last, and a dead one costs one wasted
+// click before the arrows or the automatic fallback move on.
 
 export interface ServerHealth {
   success: number;
@@ -74,10 +74,6 @@ export function getServerHealth(provider: string): ServerHealth | null {
   return readServerHealth()[provider] ?? null;
 }
 
-function isProviderId(value: unknown): value is ProviderId {
-  return typeof value === 'string' && (VALID_PROVIDERS as string[]).includes(value);
-}
-
 // Remembers which embed server last worked for a given title so automatic
 // fallback can try reliable servers first.
 // (A client can't probe embed domains directly due to CORS, so we use the
@@ -98,7 +94,7 @@ function readProviderMemory(): Record<string, ProviderId> {
  *  they can never disagree with Settings. */
 export function getProviderFallbackOrder(preferred: ProviderId[] = []): ProviderId[] {
   const chosen = preferred.filter((id) => isProviderId(id));
-  return chosen.length > 0 ? chosen : [...VALID_PROVIDERS];
+  return chosen.length > 0 ? chosen : [...PROVIDER_IDS];
 }
 
 export function rememberProvider(mediaId: string, provider: ProviderId): void {

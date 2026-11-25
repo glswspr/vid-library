@@ -19,9 +19,9 @@ import {
 import { AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Check, Star, Maximize, Minimize, Crosshair, Pin } from 'lucide-react';
 import type { ProviderId } from '../types';
 import { IFRAME_LOAD_TIMEOUT } from '../constants';
-import { resolveTmdbFromImdb } from '../services/metadata';
 import { scrollToElement } from '../utils/scroll';
 import EndOfContentOverlay from './EndOfContentOverlay';
+import { DownloadMenu } from './DownloadMenu';
 
 interface VideoPlayerProps {
   media: MediaItem;
@@ -33,30 +33,21 @@ interface VideoPlayerProps {
 }
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
-  videasy: 'Videasy',
-  vidrock: 'VidRock',
-  vidapi: 'VidAPI',
-  peachify: 'Peachify',
+  vidprime: 'VidPrime',
+  vixsrc: 'VixSrc',
+  vidnest: 'VidNest',
+  vidlink: 'VidLink',
   vidsrc: 'VidSrc',
-  vidcore: 'VidCore',
-  vidzee: 'VidZee',
   mapple: 'Mapple',
+  vidzee: 'VidZee',
+  vidcore: 'VidCore',
+  peachify: 'Peachify',
+  vidapi: 'VidAPI',
   m111: '111Movies',
-  streamx: 'StreamX',
 };
 
-/**
- * Providers whose upstream players only accept numeric TMDB IDs. IMDB IDs
- * (tt1234567) must be converted via the TMDB API before building the embed URL.
- */
-const TMDB_ID_PROVIDERS: readonly ProviderId[] = [
-  'peachify',
-  'videasy',
-  'vidzee',
-  'mapple',
-  'm111',
-  'streamx',
-];
+/** The player box is always 16:9; the sizing effect quotes it every resize. */
+const IFRAME_ASPECT_RATIO = 16 / 9;
 
 export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasNextEpisode, onAutoNext }) => {
   const [settings] = useSettings();
@@ -72,8 +63,6 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
 
   const [containerWidth, setContainerWidth] = useState<string>('100%');
   const [containerHeight, setContainerHeight] = useState<string>('');
-
-  const IFRAME_ASPECT_RATIO = 16 / 9;
 
   useEffect(() => {
     const updateContainerSize = () => {
@@ -99,7 +88,10 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
       const chromeRect = chromeEl.getBoundingClientRect();
       const navbarHeight = 64;
       const availableHeight = window.innerHeight - navbarHeight - outerRect.top + chromeRect.top;
-      const maxWidth = window.innerWidth - 48;
+      // Never wider than the card's own content box: `innerWidth - 48` ignored
+      // the padding on narrow screens and pushed the frame past the card.
+      const cardInnerWidth = outerRect.width - 24;
+      const maxWidth = Math.max(200, Math.min(window.innerWidth - 48, cardInnerWidth));
       let width: number;
       let height: number;
       if (maxWidth / availableHeight > IFRAME_ASPECT_RATIO) {
@@ -252,8 +244,8 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
     if (!data || typeof data !== 'object') return;
 
     const payload = data as Record<string, unknown>;
-    // PLAYER_EVENT wraps its fields in `data`; the bare-shape variant
-    // (VidRock) posts them at the top level.
+    // VidLink and VixSrc wrap their fields in `data`; anything that posts a
+    // bare event object lands at the top level.
     const pl = (typeof payload.data === 'object' && payload.data !== null
       ? payload.data as Record<string, unknown>
       : payload);
@@ -264,8 +256,9 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
     const rawProgress = num(pl.player_progress) ?? num(pl.currentTime) ?? num(pl.timestamp) ?? num(pl.progress);
     const rawDuration = num(pl.player_duration) ?? num(pl.duration);
     const status = typeof pl.player_status === 'string' ? pl.player_status : undefined;
+    const eventName = typeof pl.event === 'string' ? pl.event : undefined;
 
-    const isPlayerEvent = payload.type === 'PLAYER_EVENT' || payload.event === 'playing';
+    const isPlayerEvent = payload.type === 'PLAYER_EVENT' || eventName === 'playing';
     const isErrorSignal =
       payload.error === 'Content Not Found' ||
       payload.status === 404 ||
@@ -289,7 +282,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
       });
     }
 
-    if (status === 'completed' || payload.ended === true) {
+    if (status === 'completed' || eventName === 'ended' || payload.ended === true) {
       setEnded(true);
       // Navigation happens on this page, not inside the embed, so the
       // provider's "autoplay next" capability (false for every provider)
@@ -325,54 +318,18 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
 
   const iframeKey = `${providerId}|${media.id}|${season}|${episode}|${reloadNonce}`;
   const [embedUrl, setEmbedUrl] = useState<string>('');
-  // Track the resolved TMDB ID separately so the async resolution
-  // doesn't cause re-render loops, and we can use the resolved ID
-  // in the embed URL generation for TMDB-required providers.
-  const [resolvedTmdbId, setResolvedTmdbId] = useState<string | null>(null);
-  // First: resolve IMDB to TMDB asynchronously when needed
-  useEffect(() => {
-    let cancelled = false;
-    // A resolved id only belongs to the title it was resolved for — drop it
-    // when we navigate away, otherwise the next title would reuse this one's
-    // TMDB id and play the wrong video.
-    setResolvedTmdbId(null);
-    // For providers that require numeric TMDB IDs, resolve IMDB ID to TMDB ID
-    // if we only have an IMDB ID. This prevents "PDF file not found" errors
-    // caused by passing IMDB IDs (tt1234567) to servers that expect numeric
-    // TMDB IDs.
-    if (TMDB_ID_PROVIDERS.includes(providerId)) {
-      if (media.imdbId && !media.tmdbId) {
-        const imdbId = media.imdbId;
-        ;(async () => {
-          // Cached resolver shared with the rest of the app. It needs the
-          // media type: the old helper always preferred the show bucket, so a
-          // movie could resolve to a same-numbered show.
-          const resolved = await resolveTmdbFromImdb(imdbId, media.type);
-          if (!cancelled) setResolvedTmdbId(resolved?.id ?? null);
-        })();
-      }
-    }
-    return () => { cancelled = true; };
-  }, [providerId, media.id, media.imdbId, media.tmdbId, media.type]);
 
-  // Second: generate the embed URL using the resolved TMDB ID
+  /**
+   * Build the embed URL. Every live provider takes a numeric TMDB id and
+   * resolves an IMDB id itself, so the player passes the best id it has and
+   * lets the provider finish the job.
+   */
   useEffect(() => {
     let cancelled = false;
     const saved = getWatchProgress(media.id, season, episode);
 
-    // Determine the ID to pass to getEmbedUrl:
-    // - For TMDB-required providers: use resolved TMDB ID if available,
-    //   otherwise fall back to TMDB ID or IMDB ID or raw ID
-    // - For other providers: use imdbId || tmdbId || id as before
-    let embedId: string;
-    if (TMDB_ID_PROVIDERS.includes(providerId)) {
-      embedId = resolvedTmdbId || media.tmdbId || media.imdbId || media.id;
-    } else {
-      embedId = media.imdbId || media.tmdbId || media.id;
-    }
-
     const result = getProvider(providerId).getEmbedUrl({
-      id: embedId,
+      id: media.tmdbId || media.imdbId || media.id,
       type: media.type,
       season,
       episode,
@@ -385,7 +342,7 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
       setEmbedUrl(result);
     }
     return () => { cancelled = true; };
-  }, [providerId, media.id, media.imdbId, media.tmdbId, resolvedTmdbId, media.type, season, episode]);
+  }, [providerId, media.id, media.imdbId, media.tmdbId, media.type, season, episode]);
 
   useEffect(() => {
     if (!isIframeLoaded) {
@@ -426,99 +383,105 @@ export const VideoPlayer: FC<VideoPlayerProps> = ({ media, season, episode, hasN
           </div>
         </div>
       </div>
-      <div className="relative flex items-center gap-1.5 mb-3" ref={serverMenuRef}>
-        <button
-          type="button"
-          onClick={() => cycleServer(-1)}
-          aria-label="Previous server"
-          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setServerMenuOpen((o) => !o)}
-          aria-label="Choose server"
-          aria-haspopup="menu"
-          aria-expanded={serverMenuOpen}
-          className="flex-1 flex items-center justify-center gap-2 h-11 px-4 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-sm cursor-pointer"
-        >
-          <span>{currentServerLabel}</span>
-          <span className="text-xs text-cyan-400 font-medium">{PROVIDER_NAMES[providerId]}</span>
-          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${serverMenuOpen ? 'rotate-180' : ''}`} />
-        </button>
-
-        {serverMenuOpen && (
-          <div
-            role="menu"
-            className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-72 overflow-y-auto rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-1"
+      <div className="mb-3 flex flex-col gap-1.5 sm:flex-row sm:items-center">
+        <div className="relative flex items-center gap-1.5 sm:flex-1" ref={serverMenuRef}>
+          <button
+            type="button"
+            onClick={() => cycleServer(-1)}
+            aria-label="Previous server"
+            className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
           >
-            {serverOrder.map((id, index) => (
-              <button
-                key={id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={id === providerId}
-                onClick={() => {
-                  if (id !== providerId) handleProviderChange(id);
-                  setServerMenuOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm cursor-pointer ${
-                  id === providerId
-                    ? 'bg-cyan-500/15 text-cyan-300'
-                    : 'text-slate-200 hover:bg-slate-700/60'
-                }`}
-              >
-                <span className="text-xs text-slate-500 w-14 shrink-0">Server {index + 1}</span>
-                <span className="font-semibold">{PROVIDER_NAMES[id]}</span>
-                {id === providerId && <Check className="w-4 h-4 ml-auto" />}
-              </button>
-            ))}
-          </div>
-        )}
+            <ChevronLeft className="w-5 h-5" />
+          </button>
 
-        <button
-          type="button"
-          onClick={togglePin}
-          aria-label={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
-          aria-pressed={pinned}
-          title={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
-          className={`w-10 h-11 shrink-0 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
-            pinned
-              ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
-              : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
-          }`}
-        >
-          {pinned ? <Pin className="w-4 h-4 fill-current" /> : <Pin className="w-4 h-4" />}
-        </button>
+          <button
+            type="button"
+            onClick={() => setServerMenuOpen((o) => !o)}
+            aria-label="Choose server"
+            aria-haspopup="menu"
+            aria-expanded={serverMenuOpen}
+            className="flex-1 min-w-0 flex items-center justify-center gap-2 h-11 px-3 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:border-slate-600 font-bold text-sm cursor-pointer"
+          >
+            <span className="truncate">{currentServerLabel}</span>
+            <span className="text-xs text-cyan-400 font-medium truncate hidden sm:inline">{PROVIDER_NAMES[providerId]}</span>
+            <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${serverMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => cycleServer(1)}
-          aria-label="Next server"
-          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
+          {serverMenuOpen && (
+            <div
+              role="menu"
+              className="absolute left-0 right-0 top-full mt-1.5 z-30 max-h-72 overflow-y-auto rounded-xl bg-slate-800 border border-slate-700 shadow-2xl py-1"
+            >
+              {serverOrder.map((id, index) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={id === providerId}
+                  onClick={() => {
+                    if (id !== providerId) handleProviderChange(id);
+                    setServerMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm cursor-pointer ${
+                    id === providerId
+                      ? 'bg-cyan-500/15 text-cyan-300'
+                      : 'text-slate-200 hover:bg-slate-700/60'
+                  }`}
+                >
+                  <span className="text-xs text-slate-500 w-14 shrink-0">Server {index + 1}</span>
+                  <span className="font-semibold">{PROVIDER_NAMES[id]}</span>
+                  {id === providerId && <Check className="w-4 h-4 ml-auto" />}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
-        >
-          {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-        </button>
+          <button
+            type="button"
+            onClick={() => cycleServer(1)}
+            aria-label="Next server"
+            className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={handleScrollToVideo}
-          aria-label="Scroll to video"
-          className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
-        >
-          <Crosshair className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1.5 sm:shrink-0">
+          <button
+            type="button"
+            onClick={togglePin}
+            aria-label={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
+            aria-pressed={pinned}
+            title={pinned ? 'Unpin server for this show' : 'Always use this server for this show'}
+            className={`w-10 h-11 shrink-0 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
+              pinned
+                ? 'bg-cyan-500/15 border-cyan-500 text-cyan-300'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
+            }`}
+          >
+            {pinned ? <Pin className="w-4 h-4 fill-current" /> : <Pin className="w-4 h-4" />}
+          </button>
+
+          <DownloadMenu media={media} type={media.type} season={season} episode={episode} />
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
+          >
+            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleScrollToVideo}
+            aria-label="Scroll to video"
+            className="w-10 h-11 shrink-0 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:border-slate-600 flex items-center justify-center cursor-pointer"
+          >
+            <Crosshair className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       <div ref={containerRef} onDoubleClick={toggleFullscreen} data-video-player-inner className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-800 mx-auto" style={{ width: containerWidth, height: containerHeight }}>

@@ -240,14 +240,33 @@ export const HomePage: FC = () => {
           )}
         </div>
 
-        <div className="mt-3 text-center">
+        <div className="mt-3 text-center text-xs text-slate-500">
+          Block popups with{' '}
+          <a
+            href="https://brave.com/download/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-400 hover:text-cyan-400 transition-colors underline decoration-slate-600 underline-offset-2"
+          >
+            Brave
+          </a>{' '}
+          or an ad blocker for Chrome, Edge and Firefox —{' '}
           <a
             href="https://adguard.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-slate-500 hover:text-cyan-400 transition-colors"
+            className="text-slate-400 hover:text-cyan-400 transition-colors underline decoration-slate-600 underline-offset-2"
           >
-            Tip: Use AdGuard to block popups and ads.
+            AdGuard
+          </a>
+          {' · '}
+          <a
+            href="https://ublockorigin.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-400 hover:text-cyan-400 transition-colors underline decoration-slate-600 underline-offset-2"
+          >
+            uBlock Origin
           </a>
         </div>
 

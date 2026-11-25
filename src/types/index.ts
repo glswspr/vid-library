@@ -1,5 +1,5 @@
 export type MediaType = 'movie' | 'tv';
-export type ProviderId = 'videasy' | 'vidrock' | 'vidapi' | 'vidsrc' | 'peachify' | 'vidcore' | 'vidzee' | 'mapple' | 'm111' | 'streamx';
+export type ProviderId = 'vidprime' | 'vixsrc' | 'vidnest' | 'vidlink' | 'peachify' | 'vidcore' | 'mapple' | 'vidsrc' | 'vidzee' | 'vidapi' | 'm111';
 export type SubtitleLang = 'off' | 'en' | 'sv' | 'fa';
 
 export interface MediaItem {

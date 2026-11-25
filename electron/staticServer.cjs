@@ -4,7 +4,7 @@
  * Minimal static file server for the built SPA (`dist/`).
  *
  * The app is a deep-link SPA (`/movie/{id}`, `/tv/{id}/season/{s}/episode/{e}`)
- * that also calls public APIs (TMDB, vidapi.ru). Loading it from `file://` would
+ * that also calls public APIs (TMDB, the embed servers). Loading it from `file://` would
  * give every request an opaque origin and break both router deep links and CORS,
  * so the desktop shell serves `dist/` over loopback HTTP instead.
  *

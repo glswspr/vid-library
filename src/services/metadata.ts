@@ -173,7 +173,7 @@ export async function resolveTmdbId(
 
 /**
  * Resolve a TMDB numeric ID from an IMDb ID using TMDB's find API.
- * Prefers the app's own VITE_TMDB_API_KEY, falling back to VidRock's
+ * Prefers the app's own VITE_TMDB_API_KEY and falls back to the bundled
  * public key. Returns null if unresolvable.
  */
 export async function resolveTmdbFromImdb(
